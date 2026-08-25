@@ -17,39 +17,57 @@ A free, local, LAN-based web application for small retail ISPs to manage and tra
 - **Frontend:** Single HTML file (vanilla JS, no frameworks)
 - **Sync:** HTTPS web scraping of Syrotech OLT web UI (read-only, no CLI/telnet)
 
-## Quick Start
+## Requirements
 
-### 1. Clone the repo
+| Requirement | Details |
+|---|---|
+| **Python** | 3.8 or newer |
+| **pip** | Included with Python 3.8+ |
+| **OS** | Linux, Windows, or macOS |
+| **Network** | LAN access to your OLTs (no internet required) |
+| **Browser** | Any modern browser to access the web UI |
 
+### Python Dependencies (`requirements.txt`)
+
+| Package | Version | Purpose |
+|---|---|---|
+| `fastapi` | 0.115.0 | Web framework for the API |
+| `uvicorn` | 0.30.0 | ASGI server to run FastAPI |
+
+---
+
+## OS-Specific Setup
+
+### Linux (Ubuntu/Debian)
+
+**Install Python and pip:**
 ```bash
-git clone https://github.com/yourusername/olt-onu-tracker.git
+sudo apt update
+sudo apt install python3 python3-pip -y
+```
+
+**Clone and install dependencies:**
+```bash
+git clone https://github.com/GMNEdits/olt-onu-tracker.git
 cd olt-onu-tracker
+pip3 install -r requirements.txt
 ```
 
-### 2. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Run the server
-
-**Linux:**
+**Run the server:**
 ```bash
 python3 main.py
 ```
 
-**Windows:**
+**Helper script:**
+```bash
+chmod +x server.sh
+./server.sh start
+./server.sh stop
+./server.sh restart
+./server.sh status
 ```
-python main.py
-```
 
-Open `http://YOUR_LAPTOP_IP:8000` in any browser on the same LAN.
-
-### 4. Auto-start on boot
-
-#### Linux (systemd)
-
+**Auto-start on boot (systemd):**
 ```bash
 sudo tee /etc/systemd/system/olt-tracker.service > /dev/null << 'EOF'
 [Unit]
@@ -81,17 +99,134 @@ sudo systemctl stop olt-tracker
 sudo systemctl start olt-tracker
 ```
 
-#### Windows (Task Scheduler)
+---
 
+### Windows
+
+**Install Python:**
+1. Download Python 3.8+ from [python.org](https://www.python.org/downloads/)
+2. Run the installer
+3. **Check "Add Python to PATH"** during installation
+4. Verify in Command Prompt:
+```
+python --version
+pip --version
+```
+
+**Clone and install dependencies:**
+```
+git clone https://github.com/GMNEdits/olt-onu-tracker.git
+cd olt-onu-tracker
+pip install -r requirements.txt
+```
+
+**Run the server:**
+```
+python main.py
+```
+
+**Helper script:**
+```
+server.bat start
+server.bat stop
+server.bat restart
+server.bat status
+```
+
+**Auto-start on boot (Task Scheduler):**
 1. Open **Task Scheduler** (`taskschd.msc`)
 2. Click **Create Basic Task**
 3. Name: `OLT Tracker Server`, Trigger: **When the computer starts**
 4. Action: **Start a program**
 5. Program: `python`, Arguments: `C:\path\to\olt-onu-tracker\main.py`
-6. Finish, then right-click the task → **Properties** → Check **Run with highest privileges**
+6. Finish, then right-click the task > **Properties** > Check **Run with highest privileges**
 7. On the **Conditions** tab, uncheck **Start only if the computer is on AC power**
 
 Alternatively, create a shortcut to `python main.py` in `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup` for per-user auto-start.
+
+---
+
+### macOS
+
+**Install Python (via Homebrew):**
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+brew install python
+```
+
+Or download directly from [python.org](https://www.python.org/downloads/).
+
+**Clone and install dependencies:**
+```bash
+git clone https://github.com/GMNEdits/olt-onu-tracker.git
+cd olt-onu-tracker
+pip3 install -r requirements.txt
+```
+
+**Run the server:**
+```bash
+python3 main.py
+```
+
+**Helper script (same as Linux):**
+```bash
+chmod +x server.sh
+./server.sh start
+./server.sh stop
+./server.sh restart
+./server.sh status
+```
+
+**Auto-start on boot (launchd):**
+```bash
+sudo tee /Library/LaunchDaemons/com.olt-tracker.plist > /dev/null << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.olt-tracker</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>-m</string>
+        <string>uvicorn</string>
+        <string>main:app</string>
+        <string>--host</string>
+        <string>0.0.0.0</string>
+        <string>--port</string>
+        <string>8000</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/path/to/olt-onu-tracker</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+EOF
+sudo launchctl load /Library/LaunchDaemons/com.olt-tracker.plist
+```
+
+Manage with:
+```bash
+sudo launchctl start com.olt-tracker
+sudo launchctl stop com.olt-tracker
+sudo launchctl unload /Library/LaunchDaemons/com.olt-tracker.plist
+```
+
+---
+
+## Quick Reference (All OS)
+
+| Task | Linux | Windows | macOS |
+|---|---|---|---|
+| Install Python | `sudo apt install python3` | Download from python.org | `brew install python` |
+| Install deps | `pip3 install -r requirements.txt` | `pip install -r requirements.txt` | `pip3 install -r requirements.txt` |
+| Run server | `python3 main.py` | `python main.py` | `python3 main.py` |
+| Helper script | `./server.sh start` | `server.bat start` | `./server.sh start` |
+| Auto-start | systemd | Task Scheduler / Startup folder | launchd |
 
 ## How It Works
 
@@ -144,7 +279,7 @@ olt-onu-tracker/
 ├── sync.py            # OLT web scraper (GPON + EPON)
 ├── database.py        # SQLite database layer
 ├── requirements.txt   # Python dependencies
-├── server.sh          # Helper script — Linux (start/stop/restart/status)
+├── server.sh          # Helper script — Linux/macOS (start/stop/restart/status)
 ├── server.bat         # Helper script — Windows (start/stop/restart/status)
 ├── static/
 │   └── index.html     # Web UI (single file)
