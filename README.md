@@ -34,13 +34,21 @@ pip install -r requirements.txt
 
 ### 3. Run the server
 
+**Linux:**
 ```bash
 python3 main.py
 ```
 
+**Windows:**
+```
+python main.py
+```
+
 Open `http://YOUR_LAPTOP_IP:8000` in any browser on the same LAN.
 
-### 4. Auto-start on boot (Linux/systemd)
+### 4. Auto-start on boot
+
+#### Linux (systemd)
 
 ```bash
 sudo tee /etc/systemd/system/olt-tracker.service > /dev/null << 'EOF'
@@ -72,6 +80,18 @@ sudo systemctl status olt-tracker
 sudo systemctl stop olt-tracker
 sudo systemctl start olt-tracker
 ```
+
+#### Windows (Task Scheduler)
+
+1. Open **Task Scheduler** (`taskschd.msc`)
+2. Click **Create Basic Task**
+3. Name: `OLT Tracker Server`, Trigger: **When the computer starts**
+4. Action: **Start a program**
+5. Program: `python`, Arguments: `C:\path\to\olt-onu-tracker\main.py`
+6. Finish, then right-click the task → **Properties** → Check **Run with highest privileges**
+7. On the **Conditions** tab, uncheck **Start only if the computer is on AC power**
+
+Alternatively, create a shortcut to `python main.py` in `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup` for per-user auto-start.
 
 ## How It Works
 
@@ -124,7 +144,8 @@ olt-onu-tracker/
 ├── sync.py            # OLT web scraper (GPON + EPON)
 ├── database.py        # SQLite database layer
 ├── requirements.txt   # Python dependencies
-├── server.sh          # Helper script (start/stop/restart)
+├── server.sh          # Helper script — Linux (start/stop/restart/status)
+├── server.bat         # Helper script — Windows (start/stop/restart/status)
 ├── static/
 │   └── index.html     # Web UI (single file)
 └── olt_tracker.db     # SQLite database (auto-created)
