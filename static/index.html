@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OLT ONU Tracker</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+.header { background: #1e293b; padding: 16px 24px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid #334155; }
+.header h1 { font-size: 18px; font-weight: 600; color: #38bdf8; }
+.header .stats { margin-left: auto; font-size: 13px; color: #94a3b8; }
+.header .stats span { color: #38bdf8; font-weight: 600; }
+.tabs { display: flex; gap: 0; background: #1e293b; border-bottom: 1px solid #334155; }
+.tab { padding: 10px 20px; cursor: pointer; font-size: 14px; color: #94a3b8; border-bottom: 2px solid transparent; transition: all 0.2s; }
+.tab:hover { color: #e2e8f0; background: #334155; }
+.tab.active { color: #38bdf8; border-bottom-color: #38bdf8; }
+.main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+.search-box { position: relative; margin-bottom: 20px; }
+.search-box input { width: 100%; padding: 12px 16px 12px 44px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-size: 15px; outline: none; }
+.search-box input:focus { border-color: #38bdf8; }
+.search-box::before { content: "\1F50D"; position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 16px; }
+.panel { display: none; }
+.panel.active { display: block; }
+.btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.15s; }
+.btn-primary { background: #2563eb; color: white; }
+.btn-primary:hover { background: #1d4ed8; }
+.btn-danger { background: #dc2626; color: white; }
+.btn-danger:hover { background: #b91c1c; }
+.btn-ghost { background: transparent; color: #94a3b8; border: 1px solid #334155; }
+.btn-ghost:hover { background: #334155; color: #e2e8f0; }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+.toolbar { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid #1e293b; font-size: 13px; }
+th { background: #1e293b; color: #94a3b8; font-weight: 500; position: sticky; top: 0; }
+tr:hover { background: #1e293b; }
+.status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.status-online { background: #22c55e; }
+.status-offline { background: #ef4444; }
+.status-unknown { background: #f59e0b; }
+.table-wrap { max-height: 65vh; overflow-y: auto; border: 1px solid #1e293b; border-radius: 8px; }
+.badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+.badge-blue { background: #1e40af; color: #93c5fd; }
+.badge-green { background: #166534; color: #86efac; }
+.badge-red { background: #991b1b; color: #fca5a5; }
+.badge-yellow { background: #854d0e; color: #fde047; }
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; align-items: center; justify-content: center; }
+.modal-overlay.show { display: flex; }
+.modal { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 24px; width: 90%; max-width: 500px; }
+.modal h2 { font-size: 16px; margin-bottom: 16px; color: #38bdf8; }
+.form-group { margin-bottom: 14px; }
+.form-group label { display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px; }
+.form-group input, .form-group select { width: 100%; padding: 8px 12px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; color: #e2e8f0; font-size: 14px; outline: none; }
+.form-group input:focus, .form-group select:focus { border-color: #38bdf8; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+.empty { text-align: center; padding: 40px; color: #64748b; font-size: 14px; }
+.olt-card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 16px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
+.olt-info h3 { font-size: 14px; color: #e2e8f0; }
+.olt-info p { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+.olt-actions { display: flex; gap: 8px; }
+.history-item { padding: 10px 0; border-bottom: 1px solid #1e293b; font-size: 13px; }
+.history-item .time { color: #64748b; font-size: 11px; }
+.history-item .detail { color: #cbd5e1; margin-top: 2px; }
+.flex-between { display: flex; justify-content: space-between; align-items: center; }
+.btn-sync { background: #16a34a; color: white; }
+.btn-sync:hover { background: #15803d; }
+.btn-sync:disabled { background: #64748b; cursor: not-allowed; }
+.sync-status { font-size: 12px; color: #94a3b8; margin-left: 8px; }
+select { background: #0f172a !important; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>OLT ONU Tracker</h1>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:12px;">
+    <button class="btn btn-sync" id="syncBtn" onclick="runSync()">Sync OLTs</button>
+    <span class="sync-status" id="syncStatus"></span>
+    <div class="stats">
+      <span id="stat-olts">0</span> OLTs &nbsp;
+      <span id="stat-pons">0</span> PONs &nbsp;
+      <span id="stat-onus">0</span> ONUs &nbsp;
+      <span id="stat-online">0</span> Online
+    </div>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('onu')">ONUs</div>
+  <div class="tab" onclick="switchTab('olts')">OLTs & PONs</div>
+</div>
+
+<div class="main">
+  <!-- ONUs Panel -->
+  <div id="panel-onu" class="panel active">
+    <div class="search-box">
+      <input type="text" id="searchInput" placeholder="Search by MAC or customer name..." oninput="debounceSearch()">
+    </div>
+    <div class="toolbar">
+      <button class="btn btn-primary" onclick="openAddONU()">+ Add ONU</button>
+      <span id="resultCount" style="font-size:12px;color:#64748b;margin-left:8px;"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>MAC</th>
+            <th>Customer</th>
+            <th>OLT</th>
+            <th>PON</th>
+          </tr>
+        </thead>
+        <tbody id="onuTable"></tbody>
+      </table>
+      <div id="onuEmpty" class="empty">No ONUs found</div>
+    </div>
+  </div>
+
+  <!-- OLTs Panel -->
+  <div id="panel-olts" class="panel">
+    <div class="toolbar">
+      <button class="btn btn-primary" onclick="openAddOLT()">+ Add OLT</button>
+    </div>
+    <div id="oltList"></div>
+    <div id="oltEmpty" class="empty">No OLTs configured</div>
+  </div>
+
+
+</div>
+
+<!-- Add/Edit ONU Modal -->
+<div class="modal-overlay" id="onuModal">
+  <div class="modal">
+    <h2 id="onuModalTitle">Add ONU</h2>
+    <input type="hidden" id="onuEditId">
+    <div class="form-group">
+      <label>MAC Address</label>
+      <input type="text" id="onuMac" placeholder="AA:BB:CC:DD:EE:FF" style="text-transform:uppercase">
+    </div>
+    <div class="form-group">
+      <label>ONU Name</label>
+      <input type="text" id="onuName" placeholder="e.g. onu-01">
+    </div>
+    <div class="form-group">
+      <label>Customer Name</label>
+      <input type="text" id="onuCust" placeholder="Customer name">
+    </div>
+    <div class="form-group">
+      <label>Status</label>
+      <select id="onuStatus">
+        <option value="online">Online</option>
+        <option value="offline">Offline</option>
+        <option value="unknown">Unknown</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>OLT</label>
+      <select id="onuOlt" onchange="loadPONsForOLT('onuOlt','onuPon')"></select>
+    </div>
+    <div class="form-group">
+      <label>PON</label>
+      <select id="onuPon"></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('onuModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveONU()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add OLT Modal -->
+<div class="modal-overlay" id="oltModal">
+  <div class="modal">
+    <h2>Add OLT</h2>
+    <div class="form-group">
+      <label>OLT Name</label>
+      <input type="text" id="oltName" placeholder="e.g. OLT-1">
+    </div>
+    <div class="form-group">
+      <label>IP Address</label>
+      <input type="text" id="oltIp" placeholder="192.168.1.10">
+    </div>
+    <div class="form-group">
+      <label>Model</label>
+      <input type="text" id="oltModel" placeholder="e.g. SY-GPON-4OLT">
+    </div>
+    <div class="form-group">
+      <label>Telnet Username</label>
+      <input type="text" id="oltTelnetUser" placeholder="admin">
+    </div>
+    <div class="form-group">
+      <label>Telnet Password</label>
+      <input type="password" id="oltTelnetPass" placeholder="password">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('oltModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveOLT()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add PON Modal -->
+<div class="modal-overlay" id="ponModal">
+  <div class="modal">
+    <h2>Add PON Port</h2>
+    <input type="hidden" id="ponOltId">
+    <div class="form-group">
+      <label>PON Number</label>
+      <input type="number" id="ponNumber" min="1" max="128" placeholder="e.g. 1">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('ponModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="savePON()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let searchTimer;
+
+function debounceSearch() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(loadONUs, 300);
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('panel-' + tab).classList.add('active');
+  if (tab === 'olts') loadOLTs();
+  if (tab === 'onu') loadONUs();
+}
+
+async function api(url, method = 'GET', body = null) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(url, opts);
+  if (!r.ok) { const e = await r.json().catch(() => ({})); alert(e.detail || 'Error'); return null; }
+  return r.json();
+}
+
+async function loadStats() {
+  const s = await api('/api/stats');
+  if (!s) return;
+  document.getElementById('stat-olts').textContent = s.olts;
+  document.getElementById('stat-pons').textContent = s.pons;
+  document.getElementById('stat-onus').textContent = s.onus;
+  document.getElementById('stat-online').textContent = s.online;
+}
+
+async function loadONUs() {
+  const q = document.getElementById('searchInput').value.trim();
+  const list = await api('/api/onus?q=' + encodeURIComponent(q));
+  if (!list) return;
+  const tbody = document.getElementById('onuTable');
+  const empty = document.getElementById('onuEmpty');
+  const count = document.getElementById('resultCount');
+  count.textContent = list.length + ' ONU' + (list.length !== 1 ? 's' : '');
+  if (list.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+  tbody.innerHTML = list.map(o => `
+    <tr>
+      <td><code>${esc(o.mac)}</code></td>
+      <td>${esc(o.customer_name)}</td>
+      <td>${esc(o.olt_name)}</td>
+      <td>${esc(o.pon_number)}</td>
+    </tr>
+  `).join('');
+  loadStats();
+}
+
+function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+async function loadOLTs() {
+  const list = await api('/api/olts');
+  if (!list) return;
+  const el = document.getElementById('oltList');
+  const empty = document.getElementById('oltEmpty');
+  if (list.length === 0) { el.innerHTML = ''; empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+  let html = '';
+  for (const olt of list) {
+    const pons = await api('/api/olts/' + olt.id + '/pons');
+    const onus = await api('/api/onus');
+    const oltOnus = onus.filter(o => o.olt_id === olt.id);
+    html += `<div class="olt-card">
+      <div class="olt-info">
+        <h3>${esc(olt.name)} <span class="badge badge-blue">${esc(olt.model || 'N/A')}</span></h3>
+        <p>IP: ${esc(olt.ip)} &nbsp;|&nbsp; PONs: ${pons.length} &nbsp;|&nbsp; ONUs: ${oltOnus.length}</p>
+        <div style="margin-top:8px;">
+          ${pons.map(p => {
+            const pOnus = oltOnus.filter(o => o.pon_id === p.id);
+            return `<span class="badge badge-green" style="margin:2px;">P${p.pon_number} (${pOnus.length})</span>`;
+          }).join('')}
+        </div>
+      </div>
+      <div class="olt-actions">
+        <button class="btn btn-ghost btn-sm" onclick="openAddPON(${olt.id})">+ PON</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteOLT(${olt.id},'${esc(olt.name)}')">Delete</button>
+      </div>
+    </div>`;
+  }
+  el.innerHTML = html;
+}
+
+async function loadPONsForOLT(oltSelectId, ponSelectId) {
+  const oltId = document.getElementById(oltSelectId).value;
+  const ponSel = document.getElementById(ponSelectId);
+  ponSel.innerHTML = '<option value="">Loading...</option>';
+  if (!oltId) { ponSel.innerHTML = '<option value="">Select OLT first</option>'; return; }
+  const pons = await api('/api/olts/' + oltId + '/pons');
+  if (pons.length === 0) { ponSel.innerHTML = '<option value="">No PONs - add PON first</option>'; return; }
+  ponSel.innerHTML = pons.map(p => `<option value="${p.id}">PON ${p.pon_number}</option>`).join('');
+}
+
+async function loadOLTOptions(selectId) {
+  const list = await api('/api/olts');
+  const sel = document.getElementById(selectId);
+  if (list.length === 0) { sel.innerHTML = '<option value="">No OLTs - add OLT first</option>'; return; }
+  sel.innerHTML = list.map(o => `<option value="${o.id}">${esc(o.name)}</option>`).join('');
+}
+
+function openAddONU() {
+  document.getElementById('onuModalTitle').textContent = 'Add ONU';
+  document.getElementById('onuEditId').value = '';
+  document.getElementById('onuMac').value = '';
+  document.getElementById('onuName').value = '';
+  document.getElementById('onuCust').value = '';
+  document.getElementById('onuStatus').value = 'online';
+  loadOLTOptions('onuOlt').then(() => {
+    const oltId = document.getElementById('onuOlt').value;
+    if (oltId) loadPONsForOLT('onuOlt', 'onuPon');
+  });
+  document.getElementById('onuModal').classList.add('show');
+}
+
+async function editONU(id) {
+  const list = await api('/api/onus');
+  const o = list.find(x => x.id === id);
+  if (!o) return;
+  document.getElementById('onuModalTitle').textContent = 'Edit ONU';
+  document.getElementById('onuEditId').value = o.id;
+  document.getElementById('onuMac').value = o.mac;
+  document.getElementById('onuName').value = o.onu_name;
+  document.getElementById('onuCust').value = o.customer_name;
+  document.getElementById('onuStatus').value = o.status;
+  await loadOLTOptions('onuOlt');
+  document.getElementById('onuOlt').value = o.olt_id;
+  await loadPONsForOLT('onuOlt', 'onuPon');
+  document.getElementById('onuPon').value = o.pon_id;
+  document.getElementById('onuModal').classList.add('show');
+}
+
+async function saveONU() {
+  const editId = document.getElementById('onuEditId').value;
+  const data = {
+    mac: document.getElementById('onuMac').value.trim(),
+    onu_name: document.getElementById('onuName').value.trim(),
+    customer_name: document.getElementById('onuCust').value.trim(),
+    status: document.getElementById('onuStatus').value,
+    olt_id: parseInt(document.getElementById('onuOlt').value),
+    pon_id: parseInt(document.getElementById('onuPon').value),
+  };
+  if (!data.mac) { alert('MAC is required'); return; }
+  if (!data.olt_id || !data.pon_id) { alert('Select OLT and PON'); return; }
+  if (editId) {
+    await api('/api/onus/' + editId, 'PUT', data);
+  } else {
+    await api('/api/onus', 'POST', data);
+  }
+  closeModal('onuModal');
+  loadONUs();
+}
+
+async function deleteONU(id, mac) {
+  if (!confirm('Delete ONU ' + mac + '?')) return;
+  await api('/api/onus/' + id, 'DELETE');
+  loadONUs();
+}
+
+function openAddOLT() {
+  document.getElementById('oltName').value = '';
+  document.getElementById('oltIp').value = '';
+  document.getElementById('oltModel').value = '';
+  document.getElementById('oltTelnetUser').value = '';
+  document.getElementById('oltTelnetPass').value = '';
+  document.getElementById('oltModal').classList.add('show');
+}
+
+async function saveOLT() {
+  const data = {
+    name: document.getElementById('oltName').value.trim(),
+    ip: document.getElementById('oltIp').value.trim(),
+    model: document.getElementById('oltModel').value.trim(),
+    telnet_user: document.getElementById('oltTelnetUser').value.trim(),
+    telnet_pass: document.getElementById('oltTelnetPass').value.trim(),
+  };
+  if (!data.name || !data.ip) { alert('Name and IP required'); return; }
+  await api('/api/olts', 'POST', data);
+  closeModal('oltModal');
+  loadOLTs();
+  loadStats();
+}
+
+async function runSync() {
+  const btn = document.getElementById('syncBtn');
+  const status = document.getElementById('syncStatus');
+  btn.disabled = true;
+  btn.textContent = 'Syncing...';
+  status.textContent = 'Connecting to OLTs...';
+  try {
+    const result = await api('/api/sync', 'POST');
+    if (result) {
+      let msg = `Done: ${result.olts_synced} OLTs synced`;
+      if (result.total_added) msg += ` | +${result.total_added} added`;
+      if (result.total_removed) msg += ` | -${result.total_removed} removed`;
+      if (result.total_moved) msg += ` | ~${result.total_moved} moved`;
+      if (result.errors && result.errors.length) msg += ` | Errors: ${result.errors.join(', ')}`;
+      status.textContent = msg;
+      loadONUs();
+      loadStats();
+    }
+  } catch (e) {
+    status.textContent = 'Sync failed: ' + e.message;
+  }
+  btn.disabled = false;
+  btn.textContent = 'Sync OLTs';
+}
+
+async function deleteOLT(id, name) {
+  if (!confirm('Delete OLT "' + name + '"? This removes its PONs and ONUs.')) return;
+  await api('/api/olts/' + id, 'DELETE');
+  loadOLTs();
+  loadStats();
+}
+
+function openAddPON(oltId) {
+  document.getElementById('ponOltId').value = oltId;
+  document.getElementById('ponNumber').value = '';
+  document.getElementById('ponModal').classList.add('show');
+}
+
+async function savePON() {
+  const data = {
+    olt_id: parseInt(document.getElementById('ponOltId').value),
+    pon_number: parseInt(document.getElementById('ponNumber').value),
+  };
+  if (!data.pon_number || data.pon_number < 1) { alert('Enter valid PON number'); return; }
+  await api('/api/pons', 'POST', data);
+  closeModal('ponModal');
+  loadOLTs();
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+document.querySelectorAll('.modal-overlay').forEach(m => {
+  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('show'); });
+});
+
+loadONUs();
+loadStats();
+</script>
+</body>
+</html>
