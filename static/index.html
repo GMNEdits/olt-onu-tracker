@@ -89,6 +89,7 @@ select { background: #0f172a !important; }
 <div class="tabs">
   <div class="tab active" onclick="switchTab('onu')">ONUs</div>
   <div class="tab" onclick="switchTab('olts')">OLTs & PONs</div>
+  <div class="tab" onclick="switchTab('history')">History</div>
 </div>
 
 <div class="main">
@@ -126,6 +127,28 @@ select { background: #0f172a !important; }
     <div id="oltEmpty" class="empty">No OLTs configured</div>
   </div>
 
+  <!-- History Panel -->
+  <div id="panel-history" class="panel">
+    <div class="toolbar">
+      <input type="text" id="historySearch" placeholder="Search by MAC or customer..." style="padding:8px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#e2e8f0;font-size:13px;outline:none;width:300px;" oninput="debounceHistorySearch()">
+      <span id="historyCount" style="font-size:12px;color:#64748b;margin-left:8px;"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>MAC</th>
+            <th>Customer</th>
+            <th>From</th>
+            <th>To</th>
+          </tr>
+        </thead>
+        <tbody id="historyTable"></tbody>
+      </table>
+      <div id="historyEmpty" class="empty">No history yet</div>
+    </div>
+  </div>
 
 </div>
 
@@ -231,6 +254,7 @@ function switchTab(tab) {
   document.getElementById('panel-' + tab).classList.add('active');
   if (tab === 'olts') loadOLTs();
   if (tab === 'onu') loadONUs();
+  if (tab === 'history') loadHistory();
 }
 
 async function api(url, method = 'GET', body = null) {
@@ -451,6 +475,53 @@ async function savePON() {
   await api('/api/pons', 'POST', data);
   closeModal('ponModal');
   loadOLTs();
+}
+
+let historySearchTimer;
+function debounceHistorySearch() {
+  clearTimeout(historySearchTimer);
+  historySearchTimer = setTimeout(loadHistory, 300);
+}
+
+async function loadHistory() {
+  const q = document.getElementById('historySearch').value.trim();
+  const list = await api('/api/events?limit=500');
+  if (!list) return;
+  const tbody = document.getElementById('historyTable');
+  const empty = document.getElementById('historyEmpty');
+  const count = document.getElementById('historyCount');
+
+  let filtered = list;
+  if (q) {
+    const lq = q.toLowerCase();
+    filtered = list.filter(e =>
+      (e.mac && e.mac.toLowerCase().includes(lq)) ||
+      (e.customer_name && e.customer_name.toLowerCase().includes(lq))
+    );
+  }
+
+  count.textContent = filtered.length + ' record' + (filtered.length !== 1 ? 's' : '');
+  if (filtered.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+
+  tbody.innerHTML = filtered.map(e => {
+    let from = '', to = '';
+    if (e.old_olt_name) from = esc(e.old_olt_name) + ' / P' + e.old_pon_number;
+    if (e.new_olt_name) to = esc(e.new_olt_name) + ' / P' + e.new_pon_number;
+
+    const typeColors = { added: '#22c55e', moved: '#38bdf8', removed: '#ef4444' };
+    const typeLabels = { added: 'Added', moved: 'Moved', removed: 'Removed' };
+    const color = typeColors[e.event_type] || '#94a3b8';
+    const label = typeLabels[e.event_type] || e.event_type;
+
+    return `<tr>
+      <td style="white-space:nowrap;">${esc(e.timestamp)}</td>
+      <td><code>${esc(e.mac)}</code></td>
+      <td>${esc(e.customer_name || '')}</td>
+      <td style="color:#94a3b8;">${from || '-'}</td>
+      <td><span style="color:${color};font-weight:500;">${label}</span> ${to ? '→ ' + to : ''}</td>
+    </tr>`;
+  }).join('');
 }
 
 function closeModal(id) { document.getElementById(id).classList.remove('show'); }
