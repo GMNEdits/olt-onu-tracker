@@ -35,6 +35,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             mac TEXT NOT NULL,
             onu_name TEXT NOT NULL DEFAULT '',
+            onu_index INTEGER DEFAULT 0,
             customer_name TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'offline',
             olt_id INTEGER NOT NULL,
@@ -55,8 +56,10 @@ def init_db():
             new_olt_name TEXT DEFAULT '',
             new_pon_number INTEGER DEFAULT 0,
             mac TEXT DEFAULT '',
+            old_mac TEXT DEFAULT '',
             onu_name TEXT DEFAULT '',
             customer_name TEXT DEFAULT '',
+            old_customer_name TEXT DEFAULT '',
             timestamp TEXT NOT NULL,
             FOREIGN KEY (olt_id) REFERENCES olts(id),
             FOREIGN KEY (pon_id) REFERENCES pons(id)
@@ -67,5 +70,17 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_onu_customer ON onus(customer_name);
         CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
     """)
+    try:
+        conn.execute("ALTER TABLE events ADD COLUMN old_customer_name TEXT DEFAULT ''")
+    except Exception:
+        pass
+    try:
+        conn.execute("ALTER TABLE events ADD COLUMN old_mac TEXT DEFAULT ''")
+    except Exception:
+        pass
+    try:
+        conn.execute("ALTER TABLE onus ADD COLUMN onu_index INTEGER DEFAULT 0")
+    except Exception:
+        pass
     conn.commit()
     conn.close()

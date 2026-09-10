@@ -31,8 +31,8 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; colo
 .btn-ghost:hover { background: #334155; color: #e2e8f0; }
 .btn-sm { padding: 4px 10px; font-size: 12px; }
 .toolbar { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; }
-table { width: 100%; border-collapse: collapse; }
-th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid #1e293b; font-size: 13px; }
+table { width: auto; border-collapse: collapse; table-layout: auto; }
+th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #1e293b; font-size: 13px; white-space: nowrap; }
 th { background: #1e293b; color: #94a3b8; font-weight: 500; position: sticky; top: 0; }
 tr:hover { background: #1e293b; }
 .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
@@ -44,6 +44,7 @@ tr:hover { background: #1e293b; }
 .badge-blue { background: #1e40af; color: #93c5fd; }
 .badge-green { background: #166534; color: #86efac; }
 .badge-red { background: #991b1b; color: #fca5a5; }
+.badge-orange { background: #92400e; color: #fbbf24; }
 .badge-yellow { background: #854d0e; color: #fde047; }
 .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; align-items: center; justify-content: center; }
 .modal-overlay.show { display: flex; }
@@ -81,13 +82,15 @@ select { background: #0f172a !important; }
       <span id="stat-olts">0</span> OLTs &nbsp;
       <span id="stat-pons">0</span> PONs &nbsp;
       <span id="stat-onus">0</span> ONUs &nbsp;
-      <span id="stat-online">0</span> Online
+      <span id="stat-online">0</span> Online &nbsp;
+      <span id="stat-new" style="color:#f59e0b;">0</span> New
     </div>
   </div>
 </div>
 
 <div class="tabs">
   <div class="tab active" onclick="switchTab('onu')">ONUs</div>
+  <div class="tab" onclick="switchTab('new')">New ONUs</div>
   <div class="tab" onclick="switchTab('olts')">OLTs & PONs</div>
   <div class="tab" onclick="switchTab('history')">History</div>
 </div>
@@ -106,15 +109,40 @@ select { background: #0f172a !important; }
       <table>
         <thead>
           <tr>
+            <th>ONU ID</th>
             <th>MAC</th>
             <th>Customer</th>
+            <th>Status</th>
             <th>OLT</th>
             <th>PON</th>
+            <th></th>
           </tr>
         </thead>
         <tbody id="onuTable"></tbody>
       </table>
       <div id="onuEmpty" class="empty">No ONUs found</div>
+    </div>
+  </div>
+
+  <!-- New ONUs Panel -->
+  <div id="panel-new" class="panel">
+    <div class="toolbar">
+      <span style="font-size:13px;color:#94a3b8;">ONUs with no customer name assigned yet</span>
+      <span id="newOnuCount" style="font-size:12px;color:#64748b;margin-left:8px;"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ONU ID</th>
+            <th>MAC</th>
+            <th>OLT</th>
+            <th>PON</th>
+          </tr>
+        </thead>
+        <tbody id="newOnuTable"></tbody>
+      </table>
+      <div id="newOnuEmpty" class="empty">All ONUs have customer names assigned</div>
     </div>
   </div>
 
@@ -140,8 +168,7 @@ select { background: #0f172a !important; }
             <th>Date</th>
             <th>MAC</th>
             <th>Customer</th>
-            <th>From</th>
-            <th>To</th>
+            <th>Change</th>
           </tr>
         </thead>
         <tbody id="historyTable"></tbody>
@@ -254,6 +281,7 @@ function switchTab(tab) {
   document.getElementById('panel-' + tab).classList.add('active');
   if (tab === 'olts') loadOLTs();
   if (tab === 'onu') loadONUs();
+  if (tab === 'new') loadNewONUs();
   if (tab === 'history') loadHistory();
 }
 
@@ -272,6 +300,7 @@ async function loadStats() {
   document.getElementById('stat-pons').textContent = s.pons;
   document.getElementById('stat-onus').textContent = s.onus;
   document.getElementById('stat-online').textContent = s.online;
+  document.getElementById('stat-new').textContent = s.new_onus;
 }
 
 async function loadONUs() {
@@ -286,13 +315,38 @@ async function loadONUs() {
   empty.style.display = 'none';
   tbody.innerHTML = list.map(o => `
     <tr>
+      <td>${o.onu_index || '-'}</td>
       <td><code>${esc(o.mac)}</code></td>
       <td>${esc(o.customer_name)}</td>
+      <td><span class="status-dot status-${o.status}"></span>${esc(o.status)}</td>
       <td>${esc(o.olt_name)}</td>
       <td>${esc(o.pon_number)}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="fetchRx(${o.id}, this)" title="Check Rx Power">Rx</button></td>
     </tr>
   `).join('');
   loadStats();
+}
+
+async function fetchRx(onuId, btn) {
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    const data = await api('/api/onus/' + onuId + '/optical');
+    if (data && data.rx_power) {
+      const val = parseFloat(data.rx_power);
+      let color = '#22c55e';
+      if (val < -28) color = '#ef4444';
+      else if (val < -25) color = '#f59e0b';
+      btn.innerHTML = `<span style="color:${color};font-weight:600;">${esc(data.rx_power)}</span>`;
+      btn.disabled = false;
+    } else {
+      btn.textContent = 'N/A';
+      btn.disabled = false;
+    }
+  } catch (e) {
+    btn.textContent = 'Error';
+    btn.disabled = false;
+  }
 }
 
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
@@ -316,7 +370,12 @@ async function loadOLTs() {
         <div style="margin-top:8px;">
           ${pons.map(p => {
             const pOnus = oltOnus.filter(o => o.pon_id === p.id);
-            return `<span class="badge badge-green" style="margin:2px;">P${p.pon_number} (${pOnus.length})</span>`;
+            const offlineCount = pOnus.filter(o => o.status === 'offline').length;
+            const pct = pOnus.length > 0 ? offlineCount / pOnus.length : 0;
+            let badgeClass = 'badge-green';
+            if (pOnus.length > 0 && pct === 1) badgeClass = 'badge-red';
+            else if (pOnus.length > 0 && pct >= 0.5) badgeClass = 'badge-orange';
+            return `<span class="badge ${badgeClass}" style="margin:2px;">P${p.pon_number} (${pOnus.length})</span>`;
           }).join('')}
         </div>
       </div>
@@ -441,10 +500,13 @@ async function runSync() {
       if (result.total_added) msg += ` | +${result.total_added} added`;
       if (result.total_removed) msg += ` | -${result.total_removed} removed`;
       if (result.total_moved) msg += ` | ~${result.total_moved} moved`;
+      if (result.total_replaced) msg += ` | !${result.total_replaced} MAC changed`;
       if (result.errors && result.errors.length) msg += ` | Errors: ${result.errors.join(', ')}`;
       status.textContent = msg;
       loadONUs();
       loadStats();
+      loadNewONUs();
+      loadHistory();
     }
   } catch (e) {
     status.textContent = 'Sync failed: ' + e.message;
@@ -477,6 +539,25 @@ async function savePON() {
   loadOLTs();
 }
 
+async function loadNewONUs() {
+  const list = await api('/api/new-onus');
+  if (!list) return;
+  const tbody = document.getElementById('newOnuTable');
+  const empty = document.getElementById('newOnuEmpty');
+  const count = document.getElementById('newOnuCount');
+  count.textContent = list.length + ' ONU' + (list.length !== 1 ? 's' : '');
+  if (list.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+  tbody.innerHTML = list.map(o => `
+    <tr>
+      <td>${o.onu_index || '-'}</td>
+      <td><code>${esc(o.mac)}</code></td>
+      <td>${esc(o.olt_name)}</td>
+      <td>${esc(o.pon_number)}</td>
+    </tr>
+  `).join('');
+}
+
 let historySearchTimer;
 function debounceHistorySearch() {
   clearTimeout(historySearchTimer);
@@ -491,10 +572,10 @@ async function loadHistory() {
   const empty = document.getElementById('historyEmpty');
   const count = document.getElementById('historyCount');
 
-  let filtered = list;
+  let filtered = list.filter(e => e.event_type !== 'added');
   if (q) {
     const lq = q.toLowerCase();
-    filtered = list.filter(e =>
+    filtered = filtered.filter(e =>
       (e.mac && e.mac.toLowerCase().includes(lq)) ||
       (e.customer_name && e.customer_name.toLowerCase().includes(lq))
     );
@@ -505,21 +586,39 @@ async function loadHistory() {
   empty.style.display = 'none';
 
   tbody.innerHTML = filtered.map(e => {
-    let from = '', to = '';
+    let from = '', to = '', detail = '';
     if (e.old_olt_name) from = esc(e.old_olt_name) + ' / P' + e.old_pon_number;
     if (e.new_olt_name) to = esc(e.new_olt_name) + ' / P' + e.new_pon_number;
 
-    const typeColors = { added: '#22c55e', moved: '#38bdf8', removed: '#ef4444' };
-    const typeLabels = { added: 'Added', moved: 'Moved', removed: 'Removed' };
+    const typeColors = { added: '#22c55e', moved: '#38bdf8', removed: '#ef4444', updated: '#f59e0b', replaced: '#a78bfa' };
+    const typeLabels = { added: 'Added', moved: 'Moved', removed: 'Removed', updated: 'Renamed', replaced: 'MAC Changed' };
     const color = typeColors[e.event_type] || '#94a3b8';
     const label = typeLabels[e.event_type] || e.event_type;
+
+    if (e.event_type === 'updated' && e.old_customer_name) {
+      detail = `<span style="color:#64748b;">${esc(e.old_customer_name)}</span> → <span style="color:#22c55e;">${esc(e.customer_name)}</span>`;
+    } else if (e.event_type === 'replaced' && e.old_mac) {
+      detail = `<span style="color:${color};font-weight:500;">${label}</span> <code style="color:#64748b;">${esc(e.old_mac)}</code> → <code style="color:#a78bfa;">${esc(e.mac)}</code>`;
+    } else if (e.event_type === 'moved') {
+      let movedParts = [];
+      if (e.old_customer_name && e.old_customer_name !== e.customer_name && e.old_customer_name !== 'N/A') {
+        movedParts.push(`<span style="color:#64748b;">${esc(e.old_customer_name)}</span> → <span style="color:#22c55e;">${esc(e.customer_name)}</span>`);
+      }
+      if (from && to) movedParts.push(`<span style="color:${color};font-weight:500;">${label}</span> ${from} → ${to}`);
+      else if (from) movedParts.push(`<span style="color:${color};font-weight:500;">${label}</span> from ${from}`);
+      else if (to) movedParts.push(`<span style="color:${color};font-weight:500;">${label}</span> → ${to}`);
+      detail = movedParts.join('<br>');
+    } else if (e.event_type === 'removed') {
+      detail = `<span style="color:${color};font-weight:500;">${label}</span> ${from ? 'from ' + from : ''}`;
+    } else {
+      detail = `<span style="color:${color};font-weight:500;">${label}</span> ${to ? '→ ' + to : ''}`;
+    }
 
     return `<tr>
       <td style="white-space:nowrap;">${esc(e.timestamp)}</td>
       <td><code>${esc(e.mac)}</code></td>
       <td>${esc(e.customer_name || '')}</td>
-      <td style="color:#94a3b8;">${from || '-'}</td>
-      <td><span style="color:${color};font-weight:500;">${label}</span> ${to ? '→ ' + to : ''}</td>
+      <td>${detail}</td>
     </tr>`;
   }).join('');
 }

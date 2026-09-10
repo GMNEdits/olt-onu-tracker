@@ -1,5 +1,6 @@
 #!/bin/bash
-cd "/home/gmn/Documents/Default Project/syrotech-olt-tracker"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
 
 case "$1" in
   start)

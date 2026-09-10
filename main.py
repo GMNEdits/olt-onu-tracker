@@ -1,4 +1,7 @@
 import json
+import re
+import ssl
+import urllib.request
 from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -244,8 +247,73 @@ def stats():
     pons_count = conn.execute("SELECT COUNT(*) FROM pons").fetchone()[0]
     onus_count = conn.execute("SELECT COUNT(*) FROM onus").fetchone()[0]
     online = conn.execute("SELECT COUNT(*) FROM onus WHERE status='online'").fetchone()[0]
+    new_onus_count = conn.execute("SELECT COUNT(*) FROM onus WHERE customer_name='N/A' OR customer_name=''").fetchone()[0]
     conn.close()
-    return {"olts": olts_count, "pons": pons_count, "onus": onus_count, "online": online}
+    return {"olts": olts_count, "pons": pons_count, "onus": onus_count, "online": online, "new_onus": new_onus_count}
+
+@app.get("/api/new-onus")
+def list_new_onus():
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT o.*, ol.name as olt_name, p.pon_number
+        FROM onus o
+        JOIN olts ol ON o.olt_id = ol.id
+        JOIN pons p ON o.pon_id = p.id
+        WHERE o.customer_name='N/A' OR o.customer_name=''
+        ORDER BY ol.name, p.pon_number, o.mac
+    """).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+@app.get("/api/onus/{onu_id}/optical")
+def get_optical(onu_id: int):
+    conn = get_conn()
+    row = conn.execute("""
+        SELECT o.onu_index, p.pon_number, ol.ip, ol.model
+        FROM onus o
+        JOIN pons p ON o.pon_id = p.id
+        JOIN olts ol ON o.olt_id = ol.id
+        WHERE o.id=?
+    """, (onu_id,)).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(404, "ONU not found")
+    ip = row["ip"]
+    pon = row["pon_number"]
+    idx = row["onu_index"]
+    model = (row["model"] or "").upper()
+    if not ip or not pon or not idx:
+        raise HTTPException(400, "Missing OLT IP, PON, or ONU index")
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    rx = None
+    # Try GPON URL first if model contains GPON, otherwise try both
+    urls = []
+    if "GPON" in model:
+        urls = [f"https://{ip}/action/onuoptical.html?ponid={pon}&onuid={idx}"]
+    elif "EPON" in model:
+        urls = [f"https://{ip}/action/onuBasic.html?gponid={pon}&gonuid={idx}"]
+    else:
+        urls = [
+            f"https://{ip}/action/onuoptical.html?ponid={pon}&onuid={idx}",
+            f"https://{ip}/action/onuBasic.html?gponid={pon}&gonuid={idx}",
+        ]
+    for url in urls:
+        try:
+            req = urllib.request.Request(url)
+            req.add_header("User-Agent", "Mozilla/5.0")
+            resp = urllib.request.urlopen(req, timeout=10, context=ctx)
+            html = resp.read().decode("utf-8", errors="ignore")
+            m = re.search(r'[Rr]x\s*(?:optical\s*)?[Ll]evel.*?(-?\d+\.?\d*)', html)
+            if not m:
+                m = re.search(r'[Rr]eceive\s*[Pp]ower.*?(-?\d+\.?\d*)\s*dBm', html)
+            if m:
+                rx = m.group(1) + " dBm"
+                break
+        except Exception:
+            pass
+    return {"rx_power": rx or "N/A"}
 
 # --- Sync ---
 @app.post("/api/sync")
