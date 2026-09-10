@@ -1,7 +1,9 @@
 import json
 import re
 import ssl
+import http.cookiejar
 import urllib.request
+import urllib.parse
 from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -269,7 +271,7 @@ def list_new_onus():
 def get_optical(onu_id: int):
     conn = get_conn()
     row = conn.execute("""
-        SELECT o.onu_index, p.pon_number, ol.ip, ol.model
+        SELECT o.onu_index, p.pon_number, ol.ip, ol.model, ol.telnet_user, ol.telnet_pass
         FROM onus o
         JOIN pons p ON o.pon_id = p.id
         JOIN olts ol ON o.olt_id = ol.id
@@ -282,13 +284,33 @@ def get_optical(onu_id: int):
     pon = row["pon_number"]
     idx = row["onu_index"]
     model = (row["model"] or "").upper()
+    user = row["telnet_user"] or "admin"
+    passwd = row["telnet_pass"] or "admin"
     if not ip or not pon or not idx:
         raise HTTPException(400, "Missing OLT IP, PON, or ONU index")
+
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
+    cookie_jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPSHandler(context=ctx),
+        urllib.request.HTTPCookieProcessor(cookie_jar),
+    )
+
+    login_data = urllib.parse.urlencode({"user": user, "pass": passwd, "who": "100"}).encode("utf-8")
+    for login_path in ["/action/main.html", "/action/login.html"]:
+        try:
+            req = urllib.request.Request(f"https://{ip}{login_path}", data=login_data)
+            req.add_header("User-Agent", "Mozilla/5.0")
+            req.add_header("Content-Type", "application/x-www-form-urlencoded")
+            resp = opener.open(req, timeout=10)
+            resp.read(2048)
+            break
+        except Exception:
+            continue
+
     rx = None
-    # Try GPON URL first if model contains GPON, otherwise try both
     urls = []
     if "GPON" in model:
         urls = [f"https://{ip}/action/onuoptical.html?ponid={pon}&onuid={idx}"]
@@ -303,7 +325,7 @@ def get_optical(onu_id: int):
         try:
             req = urllib.request.Request(url)
             req.add_header("User-Agent", "Mozilla/5.0")
-            resp = urllib.request.urlopen(req, timeout=10, context=ctx)
+            resp = opener.open(req, timeout=10)
             html = resp.read().decode("utf-8", errors="ignore")
             m = re.search(r'[Rr]x\s*(?:optical\s*)?[Ll]evel.*?(-?\d+\.?\d*)', html)
             if not m:
