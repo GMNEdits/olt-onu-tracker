@@ -2,32 +2,50 @@
 
 A free, local, LAN-based web application for small retail ISPs to manage and track ONU (Optical Network Unit) devices across multiple Syrotech OLTs. Replaces manual Excel tracking with automatic OLT sync and a searchable web interface.
 
+![Dark UI](https://img.shields.io/badge/UI-Dark_Theme-1e293b) ![Python](https://img.shields.io/badge/Python-3.8+-3776ab) ![License](https://img.shields.io/badge/License-MIT-green)
+
+## Demo
+
+| ONUs Tab | OLTs & PONs | History |
+|---|---|---|
+| Searchable table with ONU ID, MAC, Customer, Status, OLT, PON | PON health badges (green/orange/red) | Track all changes with old → new values |
+
 ## Features
 
 - **Auto-sync** from Syrotech GPON and EPON OLTs via HTTPS web UI scraping
 - **Searchable registry** — find any ONU by MAC/SN or customer name instantly
 - **Auto-detects** GPON vs EPON OLTs, no manual configuration needed
-- **Change tracking** — records added, removed, and moved ONUs with timestamps
+- **ONU tracking** — ONU ID, MAC/SN, customer name, online/offline status, OLT, PON
+- **New ONUs tab** — shows unconfigured ONUs (no customer name yet)
+- **PON health indicator** — colored badges show fiber cut status:
+  - Green: less than 50% offline
+  - Orange: 50% or more offline (warning)
+  - Red: all ONUs offline (fiber cut)
+- **Live Rx Power check** — click Rx button on any ONU to fetch real-time optical receive power from the OLT
+- **Change tracking** — records added, removed, moved, renamed, and MAC-replaced ONUs
+- **History tab** — filterable log showing old → new values for every change
 - **Dark-themed web UI** — clean, responsive, works on any device with a browser
 - **Zero cost** — runs on any office PC, no internet required, all open-source
 
 ## Tech Stack
 
-- **Backend:** Python 3 + FastAPI + SQLite
-- **Frontend:** Single HTML file (vanilla JS, no frameworks)
-- **Sync:** HTTPS web scraping of Syrotech OLT web UI (read-only, no CLI/telnet)
+| Component | Technology |
+|---|---|
+| Backend | Python 3 + FastAPI + SQLite |
+| Frontend | Single HTML file (vanilla JS, no frameworks) |
+| Sync | HTTPS web scraping of Syrotech OLT web UI |
 
 ## Requirements
 
 | Requirement | Details |
 |---|---|
-| **Python** | 3.8 or newer |
-| **pip** | Included with Python 3.8+ |
-| **OS** | Linux, Windows, or macOS |
-| **Network** | LAN access to your OLTs (no internet required) |
-| **Browser** | Any modern browser to access the web UI |
+| Python | 3.8 or newer |
+| pip | Included with Python 3.8+ |
+| OS | Linux, Windows, or macOS |
+| Network | LAN access to your OLTs (no internet required) |
+| Browser | Any modern browser |
 
-### Python Dependencies (`requirements.txt`)
+### Dependencies
 
 | Package | Version | Purpose |
 |---|---|---|
@@ -36,21 +54,36 @@ A free, local, LAN-based web application for small retail ISPs to manage and tra
 
 ---
 
+## Quick Setup
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/GMNEdits/olt-onu-tracker.git
+cd olt-onu-tracker
+pip install -r requirements.txt
+```
+
+### 2. Run
+
+```bash
+python main.py
+```
+
+### 3. Open browser
+
+Go to `http://localhost:8000`
+
+---
+
 ## OS-Specific Setup
 
 ### Linux (Ubuntu/Debian)
 
-**Install Python and pip:**
+**Install Python:**
 ```bash
 sudo apt update
 sudo apt install python3 python3-pip -y
-```
-
-**Clone and install dependencies:**
-```bash
-git clone https://github.com/GMNEdits/olt-onu-tracker.git
-cd olt-onu-tracker
-pip3 install -r requirements.txt
 ```
 
 **Run the server:**
@@ -92,7 +125,7 @@ sudo systemctl enable olt-tracker
 sudo systemctl start olt-tracker
 ```
 
-Manage with:
+Manage:
 ```bash
 sudo systemctl status olt-tracker
 sudo systemctl stop olt-tracker
@@ -105,22 +138,10 @@ sudo systemctl start olt-tracker
 
 **Install Python:**
 1. Download Python 3.8+ from [python.org](https://www.python.org/downloads/)
-2. Run the installer
-3. **Check "Add Python to PATH"** during installation
-4. Verify in Command Prompt:
-```
-python --version
-pip --version
-```
+2. Run installer, **check "Add Python to PATH"**
+3. Verify: `python --version`
 
-**Clone and install dependencies:**
-```
-git clone https://github.com/GMNEdits/olt-onu-tracker.git
-cd olt-onu-tracker
-pip install -r requirements.txt
-```
-
-**Run the server:**
+**Run:**
 ```
 python main.py
 ```
@@ -133,16 +154,15 @@ server.bat restart
 server.bat status
 ```
 
-**Auto-start on boot (Task Scheduler):**
-1. Open **Task Scheduler** (`taskschd.msc`)
-2. Click **Create Basic Task**
-3. Name: `OLT Tracker Server`, Trigger: **When the computer starts**
-4. Action: **Start a program**
-5. Program: `python`, Arguments: `C:\path\to\olt-onu-tracker\main.py`
-6. Finish, then right-click the task > **Properties** > Check **Run with highest privileges**
-7. On the **Conditions** tab, uncheck **Start only if the computer is on AC power**
-
-Alternatively, create a shortcut to `python main.py` in `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup` for per-user auto-start.
+**Auto-start on boot:**
+1. Create `start.bat`:
+```bat
+@echo off
+cd C:\olt-tracker
+python -m uvicorn main:app --host 0.0.0.0 --port 8000
+```
+2. Press `Win+R`, type `shell:startup`, press Enter
+3. Put a shortcut to `start.bat` in that folder
 
 ---
 
@@ -154,27 +174,9 @@ Alternatively, create a shortcut to `python main.py` in `%APPDATA%\Microsoft\Win
 brew install python
 ```
 
-Or download directly from [python.org](https://www.python.org/downloads/).
-
-**Clone and install dependencies:**
-```bash
-git clone https://github.com/GMNEdits/olt-onu-tracker.git
-cd olt-onu-tracker
-pip3 install -r requirements.txt
-```
-
-**Run the server:**
+**Run:**
 ```bash
 python3 main.py
-```
-
-**Helper script (same as Linux):**
-```bash
-chmod +x server.sh
-./server.sh start
-./server.sh stop
-./server.sh restart
-./server.sh status
 ```
 
 **Auto-start on boot (launchd):**
@@ -209,67 +211,57 @@ EOF
 sudo launchctl load /Library/LaunchDaemons/com.olt-tracker.plist
 ```
 
-Manage with:
-```bash
-sudo launchctl start com.olt-tracker
-sudo launchctl stop com.olt-tracker
-sudo launchctl unload /Library/LaunchDaemons/com.olt-tracker.plist
-```
-
 ---
-
-## Quick Reference (All OS)
-
-| Task | Linux | Windows | macOS |
-|---|---|---|---|
-| Install Python | `sudo apt install python3` | Download from python.org | `brew install python` |
-| Install deps | `pip3 install -r requirements.txt` | `pip install -r requirements.txt` | `pip3 install -r requirements.txt` |
-| Run server | `python3 main.py` | `python main.py` | `python3 main.py` |
-| Helper script | `./server.sh start` | `server.bat start` | `./server.sh start` |
-| Auto-start | systemd | Task Scheduler / Startup folder | launchd |
 
 ## How It Works
 
-### OLT Setup
+### Step 1: Add OLTs
 
 1. Open the **OLTs & PONs** tab
-2. Click **+ Add OLT** — enter name, IP, and web login credentials (username/password)
-3. PON ports are auto-created when you first sync
+2. Click **+ Add OLT**
+3. Enter name, IP address, and web login credentials
+4. PON ports are auto-created on first sync
 
-### Syncing
+### Step 2: Sync
 
 1. Click **Sync OLTs** in the header
 2. The app logs into each OLT's HTTPS web UI (read-only)
 3. Scrapes all ONU data from each PON port
-4. Detects what changed (added/removed/moved ONUs)
-5. Updates the database and records changes
+4. Auto-detects GPON vs EPON
+5. Compares with previous data and records all changes
 
-### OLT Web UI Requirements
+### Step 3: Monitor
 
-For sync to work, the OLT must have:
-- **HTTPS web UI** enabled (default on Syrotech OLTs)
-- **Web login** enabled with a valid user
-- The user must have **read access** to the ONU auth info page
+- **ONUs tab** — search and view all ONUs
+- **New ONUs tab** — see which ONUs need customer names
+- **OLTs & PONs tab** — check PON health at a glance
+- **History tab** — review all changes over time
 
-### GPON vs EPON
+---
 
-| | GPON OLTs | EPON OLTs |
+## GPON vs EPON
+
+| Feature | GPON OLTs | EPON OLTs |
 |---|---|---|
-| Web login endpoint | `/action/main.html` | `/action/login.html` |
-| ONU page | Fetches PON1-4 separately | Fetches all PONs with `?select=255` |
-| Unique identifier | Serial Number (SN) | MAC Address |
-| Detection | HTML contains "GPON" | HTML contains "EPON" |
+| Web login | `/action/main.html` | `/action/login.html` |
+| ONU page | Fetches PON1-4 separately | Fetches all with `?select=255` |
+| Identifier | Serial Number (SN) | MAC Address |
+| Detection | Auto (HTML contains "GPON") | Auto (HTML contains "EPON") |
 
-Both are auto-detected — no manual configuration.
+Both are auto-detected — no manual configuration needed.
 
-## Example OLT Configuration
+---
 
-```
-Name:    OLT-1
-IP:      192.168.1.10
-User:    admin
-Pass:    your_password
-```
+## Tabs
+
+| Tab | Description |
+|---|---|
+| **ONUs** | All ONUs with ONU ID, MAC, Customer, Status, OLT, PON. Searchable. |
+| **New ONUs** | ONUs with no customer name assigned (N/A or empty). |
+| **OLTs & PONs** | OLT cards with PON health badges (green/orange/red). |
+| **History** | All changes — moved, renamed, MAC changed, removed. Shows old → new. |
+
+---
 
 ## Project Structure
 
@@ -279,35 +271,108 @@ olt-onu-tracker/
 ├── sync.py            # OLT web scraper (GPON + EPON)
 ├── database.py        # SQLite database layer
 ├── requirements.txt   # Python dependencies
-├── server.sh          # Helper script — Linux/macOS (start/stop/restart/status)
-├── server.bat         # Helper script — Windows (start/stop/restart/status)
+├── server.sh          # Helper script — Linux/macOS
+├── server.bat         # Helper script — Windows
 ├── static/
-│   └── index.html     # Web UI (single file)
-└── olt_tracker.db     # SQLite database (auto-created)
+│   └── index.html     # Web UI (single file, dark theme)
+└── olt_tracker.db     # SQLite database (auto-created, gitignored)
 ```
+
+---
 
 ## API Endpoints
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+|---|---|---|
 | GET | `/api/olts` | List all OLTs |
 | POST | `/api/olts` | Add OLT |
 | DELETE | `/api/olts/{id}` | Delete OLT |
 | GET | `/api/olts/{id}/pons` | List PONs for OLT |
 | POST | `/api/pons` | Add PON |
-| GET | `/api/onus?q=` | Search ONUs (by MAC, name, customer) |
+| GET | `/api/onus?q=` | Search ONUs |
+| GET | `/api/new-onus` | List unconfigured ONUs |
 | POST | `/api/onus` | Add ONU |
 | PUT | `/api/onus/{id}` | Update ONU |
 | DELETE | `/api/onus/{id}` | Delete ONU |
+| GET | `/api/events?onu_id=&limit=` | List history events |
+| GET | `/api/onus/{id}/optical` | Fetch live Rx Power for an ONU |
 | GET | `/api/stats` | Dashboard stats |
 | POST | `/api/sync` | Sync all OLTs |
 
+---
+
+## Database Schema
+
+### olts
+| Column | Type | Description |
+|---|---|---|
+| id | INTEGER | Primary key |
+| name | TEXT | OLT name |
+| ip | TEXT | OLT IP address |
+| model | TEXT | OLT model |
+| telnet_user | TEXT | Web login username |
+| telnet_pass | TEXT | Web login password |
+
+### pons
+| Column | Type | Description |
+|---|---|---|
+| id | INTEGER | Primary key |
+| olt_id | INTEGER | FK → olts.id |
+| pon_number | INTEGER | PON port number (1-8) |
+
+### onus
+| Column | Type | Description |
+|---|---|---|
+| id | INTEGER | Primary key |
+| mac | TEXT | MAC address or serial number |
+| onu_name | TEXT | Auto-generated (e.g., PON1-ONU5) |
+| onu_index | INTEGER | ONU index on the PON port |
+| customer_name | TEXT | Customer name (N/A if unassigned) |
+| status | TEXT | online / offline |
+| olt_id | INTEGER | FK → olts.id |
+| pon_id | INTEGER | FK → pons.id |
+| last_sync | TEXT | Last sync timestamp |
+
+### events
+| Column | Type | Description |
+|---|---|---|
+| id | INTEGER | Primary key |
+| onu_id | INTEGER | FK → onus.id |
+| event_type | TEXT | added / moved / removed / updated / replaced |
+| olt_id | INTEGER | FK → olts.id |
+| pon_id | INTEGER | FK → pons.id |
+| old_olt_name | TEXT | Previous OLT (for moves) |
+| old_pon_number | INTEGER | Previous PON (for moves) |
+| new_olt_name | TEXT | New OLT |
+| new_pon_number | INTEGER | New PON |
+| mac | TEXT | Current MAC/SN |
+| old_mac | TEXT | Previous MAC (for replacements) |
+| onu_name | TEXT | ONU name |
+| customer_name | TEXT | Current customer name |
+| old_customer_name | TEXT | Previous name (for renames/moves) |
+| timestamp | TEXT | Event timestamp |
+
+---
+
+## Event Types
+
+| Type | Description | History Display |
+|---|---|---|
+| **added** | New ONU detected | Not shown in History |
+| **moved** | ONU moved to different OLT/PON | Old → new customer name + location |
+| **removed** | ONU disappeared from OLT | Location removed from |
+| **updated** | Customer name changed | Old name → new name |
+| **replaced** | MAC address changed (same customer) | Old MAC → new MAC |
+
+---
+
 ## Important Notes
 
-- **Read-only** — the app never writes commands to OLTs, only reads data via the web UI
-- **LAN only** — designed to run on your local network, no internet required
-- **No user login** — the web UI is open to anyone on the LAN
-- **Credentials stored in plain text** — the OLT web login is saved in the SQLite database. Keep the server secure on your LAN.
+- **Read-only** — never writes commands to OLTs, only reads via HTTPS web UI
+- **LAN only** — designed for local network, no internet required
+- **No user login** — web UI is open to anyone on the LAN
+- **Credentials** — stored in SQLite database, keep server secure on your LAN
+- **Database** — each instance has its own `olt_tracker.db` (gitignored)
 
 ## License
 
