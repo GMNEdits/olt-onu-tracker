@@ -21,6 +21,7 @@ A free, local, LAN-based web application for small retail ISPs to manage and tra
   - Green: less than 50% offline
   - Orange: 50% or more offline (warning)
   - Red: all ONUs offline (fiber cut)
+- **Live Rx Power check** — click Rx button on any ONU to fetch real-time optical receive power from the OLT
 - **Change tracking** — records added, removed, moved, renamed, and MAC-replaced ONUs
 - **History tab** — filterable log showing old → new values for every change
 - **Dark-themed web UI** — clean, responsive, works on any device with a browser
@@ -293,7 +294,8 @@ olt-onu-tracker/
 | POST | `/api/onus` | Add ONU |
 | PUT | `/api/onus/{id}` | Update ONU |
 | DELETE | `/api/onus/{id}` | Delete ONU |
-| GET | `/api/events?q=` | List history events |
+| GET | `/api/events?onu_id=&limit=` | List history events |
+| GET | `/api/onus/{id}/optical` | Fetch live Rx Power for an ONU |
 | GET | `/api/stats` | Dashboard stats |
 | POST | `/api/sync` | Sync all OLTs |
 

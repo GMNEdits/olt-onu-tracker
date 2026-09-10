@@ -115,6 +115,7 @@ select { background: #0f172a !important; }
             <th>Status</th>
             <th>OLT</th>
             <th>PON</th>
+            <th></th>
           </tr>
         </thead>
         <tbody id="onuTable"></tbody>
@@ -320,9 +321,32 @@ async function loadONUs() {
       <td><span class="status-dot status-${o.status}"></span>${esc(o.status)}</td>
       <td>${esc(o.olt_name)}</td>
       <td>${esc(o.pon_number)}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="fetchRx(${o.id}, this)" title="Check Rx Power">Rx</button></td>
     </tr>
   `).join('');
   loadStats();
+}
+
+async function fetchRx(onuId, btn) {
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    const data = await api('/api/onus/' + onuId + '/optical');
+    if (data && data.rx_power) {
+      const val = parseFloat(data.rx_power);
+      let color = '#22c55e';
+      if (val < -28) color = '#ef4444';
+      else if (val < -25) color = '#f59e0b';
+      btn.innerHTML = `<span style="color:${color};font-weight:600;">${esc(data.rx_power)}</span>`;
+      btn.disabled = false;
+    } else {
+      btn.textContent = 'N/A';
+      btn.disabled = false;
+    }
+  } catch (e) {
+    btn.textContent = 'Error';
+    btn.disabled = false;
+  }
 }
 
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
