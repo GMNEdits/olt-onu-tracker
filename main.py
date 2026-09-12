@@ -337,10 +337,58 @@ def get_optical(onu_id: int):
             pass
     return {"rx_power": rx or "N/A"}
 
+# --- PON View (grouped ONUs by OLT → PON) ---
+@app.get("/api/pon-view")
+def pon_view(olt_id: int = 0):
+    conn = get_conn()
+    if olt_id:
+        olts = conn.execute("SELECT * FROM olts WHERE id=? ORDER BY name", (olt_id,)).fetchall()
+    else:
+        olts = conn.execute("SELECT * FROM olts ORDER BY name").fetchall()
+
+    result = []
+    for olt in olts:
+        olt = dict(olt)
+        pons = conn.execute("SELECT * FROM pons WHERE olt_id=? ORDER BY pon_number", (olt["id"],)).fetchall()
+        pon_list = []
+        for pon in pons:
+            pon = dict(pon)
+            onus = conn.execute("""
+                SELECT id, onu_index, mac, customer_name, status
+                FROM onus WHERE pon_id=?
+                ORDER BY onu_index
+            """, (pon["id"],)).fetchall()
+            online = sum(1 for o in onus if o["status"] == "online")
+            pon_list.append({
+                "pon_id": pon["id"],
+                "pon_number": pon["pon_number"],
+                "total": len(onus),
+                "online": online,
+                "offline": len(onus) - online,
+                "onus": [dict(o) for o in onus],
+            })
+        result.append({
+            "olt_id": olt["id"],
+            "olt_name": olt["name"],
+            "ip": olt["ip"],
+            "model": olt.get("model", ""),
+            "pons": pon_list,
+        })
+    conn.close()
+    return result
+
 # --- Sync ---
 @app.post("/api/sync")
-def run_sync():
-    result = sync_all()
+def run_sync(olt_id: int = 0):
+    if olt_id:
+        conn = get_conn()
+        olt = conn.execute("SELECT * FROM olts WHERE id=?", (olt_id,)).fetchone()
+        conn.close()
+        if not olt:
+            raise HTTPException(404, "OLT not found")
+        result = sync_all(olt_id=olt_id)
+    else:
+        result = sync_all()
     return result
 
 if __name__ == "__main__":

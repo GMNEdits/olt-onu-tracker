@@ -68,6 +68,7 @@ tr:hover { background: #1e293b; }
 .btn-sync:hover { background: #15803d; }
 .btn-sync:disabled { background: #64748b; cursor: not-allowed; }
 .sync-status { font-size: 12px; color: #94a3b8; margin-left: 8px; }
+.pon-onus-wrap .table-wrap { margin-top: 4px; }
 select { background: #0f172a !important; }
 </style>
 </head>
@@ -89,39 +90,26 @@ select { background: #0f172a !important; }
 </div>
 
 <div class="tabs">
-  <div class="tab active" onclick="switchTab('onu')">ONUs</div>
+  <div class="tab active" onclick="switchTab('ponview')">PON View</div>
   <div class="tab" onclick="switchTab('new')">New ONUs</div>
   <div class="tab" onclick="switchTab('olts')">OLTs & PONs</div>
   <div class="tab" onclick="switchTab('history')">History</div>
 </div>
 
 <div class="main">
-  <!-- ONUs Panel -->
-  <div id="panel-onu" class="panel active">
+  <!-- PON View Panel -->
+  <div id="panel-ponview" class="panel active">
     <div class="search-box">
       <input type="text" id="searchInput" placeholder="Search by MAC or customer name..." oninput="debounceSearch()">
     </div>
     <div class="toolbar">
-      <button class="btn btn-primary" onclick="openAddONU()">+ Add ONU</button>
-      <span id="resultCount" style="font-size:12px;color:#64748b;margin-left:8px;"></span>
+      <select id="ponViewOltFilter" onchange="loadPONView()" style="padding:8px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#e2e8f0;font-size:13px;outline:none;">
+        <option value="0">All OLTs</option>
+      </select>
+      <span id="ponViewCount" style="font-size:12px;color:#64748b;margin-left:8px;"></span>
     </div>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>ONU ID</th>
-            <th>MAC</th>
-            <th>Customer</th>
-            <th>Status</th>
-            <th>OLT</th>
-            <th>PON</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="onuTable"></tbody>
-      </table>
-      <div id="onuEmpty" class="empty">No ONUs found</div>
-    </div>
+    <div id="ponViewContent"></div>
+    <div id="ponViewEmpty" class="empty">No OLTs configured</div>
   </div>
 
   <!-- New ONUs Panel -->
@@ -271,7 +259,7 @@ let searchTimer;
 
 function debounceSearch() {
   clearTimeout(searchTimer);
-  searchTimer = setTimeout(loadONUs, 300);
+  searchTimer = setTimeout(loadPONView, 300);
 }
 
 function switchTab(tab) {
@@ -279,8 +267,8 @@ function switchTab(tab) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   event.target.classList.add('active');
   document.getElementById('panel-' + tab).classList.add('active');
+  if (tab === 'ponview') loadPONView();
   if (tab === 'olts') loadOLTs();
-  if (tab === 'onu') loadONUs();
   if (tab === 'new') loadNewONUs();
   if (tab === 'history') loadHistory();
 }
@@ -303,36 +291,155 @@ async function loadStats() {
   document.getElementById('stat-new').textContent = s.new_onus;
 }
 
-async function loadONUs() {
-  const q = document.getElementById('searchInput').value.trim();
-  const list = await api('/api/onus?q=' + encodeURIComponent(q));
-  if (!list) return;
-  const tbody = document.getElementById('onuTable');
-  const empty = document.getElementById('onuEmpty');
-  const count = document.getElementById('resultCount');
-  count.textContent = list.length + ' ONU' + (list.length !== 1 ? 's' : '');
-  if (list.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
-  empty.style.display = 'none';
-  tbody.innerHTML = list.map(o => `
-    <tr>
-      <td>${o.onu_index || '-'}</td>
-      <td><code>${esc(o.mac)}</code></td>
-      <td>${esc(o.customer_name)}</td>
-      <td><span class="status-dot status-${o.status}"></span>${esc(o.status)}</td>
-      <td>${esc(o.olt_name)}</td>
-      <td>${esc(o.pon_number)}</td>
-      <td><button class="btn btn-ghost btn-sm" onclick="fetchRx(${o.id}, this)" title="Check Rx Power">Rx</button></td>
-    </tr>
-  `).join('');
-  loadStats();
+// ========== PON VIEW ==========
+async function loadPONViewFilter() {
+  const list = await api('/api/olts');
+  const sel = document.getElementById('ponViewOltFilter');
+  const current = sel.value;
+  sel.innerHTML = '<option value="0">All OLTs</option>';
+  if (list) {
+    for (const olt of list) {
+      sel.innerHTML += `<option value="${olt.id}">${esc(olt.name)}</option>`;
+    }
+    sel.value = current;
+  }
 }
 
+async function loadPONView() {
+  const oltId = document.getElementById('ponViewOltFilter').value;
+  const q = document.getElementById('searchInput').value.trim().toLowerCase();
+  const url = oltId > 0 ? '/api/pon-view?olt_id=' + oltId : '/api/pon-view';
+  const data = await api(url);
+  if (!data) return;
+
+  const el = document.getElementById('ponViewContent');
+  const empty = document.getElementById('ponViewEmpty');
+  const count = document.getElementById('ponViewCount');
+
+  let totalOnus = 0, totalOnline = 0;
+  for (const olt of data) {
+    for (const pon of olt.pons) {
+      totalOnus += pon.total;
+      totalOnline += pon.online;
+    }
+  }
+  count.textContent = data.length + ' OLT' + (data.length !== 1 ? 's' : '') + ' · ' + totalOnus + ' ONUs · ' + totalOnline + ' online';
+
+  if (data.length === 0) { el.innerHTML = ''; empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+
+  let html = '';
+  for (const olt of data) {
+    const oltTotalOnus = olt.pons.reduce((s, p) => s + p.total, 0);
+    const oltOnline = olt.pons.reduce((s, p) => s + p.online, 0);
+    html += `<div class="olt-card" style="flex-direction:column;align-items:stretch;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div class="olt-info">
+          <h3>${esc(olt.olt_name)} <span class="badge badge-blue">${esc(olt.model || 'N/A')}</span> <span style="font-size:12px;color:#64748b;">${esc(olt.ip)}</span></h3>
+          <p>${oltTotalOnus} ONUs · ${oltOnline} online · ${oltTotalOnus - oltOnline} offline</p>
+        </div>
+        <button class="btn btn-sync btn-sm" onclick="syncOLTFromView(${olt.olt_id}, this)">Sync OLT</button>
+      </div>`;
+
+    for (const pon of olt.pons) {
+      // Filter ONUs by search query
+      let filteredOnus = pon.onus;
+      if (q) {
+        filteredOnus = pon.onus.filter(o =>
+          (o.mac && o.mac.toLowerCase().includes(q)) ||
+          (o.customer_name && o.customer_name.toLowerCase().includes(q))
+        );
+      }
+      if (filteredOnus.length === 0 && q) continue;
+
+      const displayTotal = q ? filteredOnus.length : pon.total;
+      const displayOnline = q ? filteredOnus.filter(o => o.status === 'online').length : pon.online;
+      const displayOffline = displayTotal - displayOnline;
+      const offlineCount = pon.offline;
+      const pct = pon.total > 0 ? offlineCount / pon.total : 0;
+      let badgeClass = 'badge-green';
+      let statusIcon = '🟢';
+      if (pon.total > 0 && pct >= 0.5) { badgeClass = 'badge-red'; statusIcon = '🔴'; }
+      else if (pon.total > 0 && pct >= 0.2) { badgeClass = 'badge-orange'; statusIcon = '🟡'; }
+
+      const ponId = 'pon-' + olt.olt_id + '-' + pon.pon_number;
+      html += `<div style="border-top:1px solid #334155;padding-top:10px;margin-top:10px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer;" onclick="togglePON('${ponId}')">
+          <span style="font-size:12px;color:#64748b;">▼</span>
+          <span class="badge ${badgeClass}">PON ${pon.pon_number}</span>
+          <span style="font-size:13px;color:#94a3b8;">${displayTotal} ONUs · ${displayOnline} online · ${displayOffline} offline ${q ? '(filtered)' : statusIcon}</span>
+        </div>
+        <div id="${ponId}" class="pon-onus-wrap">
+          <div class="table-wrap" style="max-height:40vh;">
+            <table>
+              <thead>
+                <tr>
+                  <th>ONU ID</th>
+                  <th>MAC</th>
+                  <th>Customer</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>`;
+
+      for (const onu of filteredOnus) {
+        html += `<tr>
+          <td>${onu.onu_index || '-'}</td>
+          <td><code>${esc(onu.mac)}</code></td>
+          <td>${esc(onu.customer_name)}</td>
+          <td><span class="status-dot status-${onu.status}"></span>${esc(onu.status)}</td>
+          <td>${onu.status === 'online' ? `<button class="btn btn-ghost btn-sm" onclick="fetchRx(${onu.id}, this)" title="Check Rx Power">Rx</button>` : '<span style="color:#64748b;font-size:11px;">—</span>'}</td>
+        </tr>`;
+      }
+
+      html += `</tbody></table>
+            </div>
+          </div>`;
+    }
+    html += `</div>`;
+  }
+  el.innerHTML = html;
+}
+
+function togglePON(id) {
+  const el = document.getElementById(id);
+  if (el.style.display === 'none') {
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+async function syncOLTFromView(oltId, btn) {
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Syncing...';
+  try {
+    const result = await api('/api/sync?olt_id=' + oltId, 'POST');
+    if (result) {
+      let msg = result.olts_synced + ' OLT synced';
+      if (result.total_added) msg += ' +' + result.total_added;
+      if (result.total_removed) msg += ' -' + result.total_removed;
+      if (result.total_moved) msg += ' ~' + result.total_moved;
+      btn.textContent = msg;
+      setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 2500);
+      loadPONView();
+      loadStats();
+    }
+  } catch (e) {
+    btn.textContent = 'Error';
+    setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 2500);
+  }
+}
+
+// ========== Rx Power ==========
 async function fetchRx(onuId, btn) {
   btn.disabled = true;
   btn.textContent = '...';
   try {
     const data = await api('/api/onus/' + onuId + '/optical');
-    if (data && data.rx_power) {
+    if (data && data.rx_power && data.rx_power !== 'N/A') {
       const val = parseFloat(data.rx_power);
       let color = '#22c55e';
       if (val < -28) color = '#ef4444';
@@ -351,6 +458,7 @@ async function fetchRx(onuId, btn) {
 
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
+// ========== OLTs & PONs ==========
 async function loadOLTs() {
   const list = await api('/api/olts');
   if (!list) return;
@@ -454,13 +562,13 @@ async function saveONU() {
     await api('/api/onus', 'POST', data);
   }
   closeModal('onuModal');
-  loadONUs();
+  loadPONView();
 }
 
 async function deleteONU(id, mac) {
   if (!confirm('Delete ONU ' + mac + '?')) return;
   await api('/api/onus/' + id, 'DELETE');
-  loadONUs();
+  loadPONView();
 }
 
 function openAddOLT() {
@@ -503,7 +611,7 @@ async function runSync() {
       if (result.total_replaced) msg += ` | !${result.total_replaced} MAC changed`;
       if (result.errors && result.errors.length) msg += ` | Errors: ${result.errors.join(', ')}`;
       status.textContent = msg;
-      loadONUs();
+      loadPONView();
       loadStats();
       loadNewONUs();
       loadHistory();
@@ -539,6 +647,7 @@ async function savePON() {
   loadOLTs();
 }
 
+// ========== New ONUs ==========
 async function loadNewONUs() {
   const list = await api('/api/new-onus');
   if (!list) return;
@@ -558,6 +667,7 @@ async function loadNewONUs() {
   `).join('');
 }
 
+// ========== History ==========
 let historySearchTimer;
 function debounceHistorySearch() {
   clearTimeout(historySearchTimer);
@@ -629,7 +739,9 @@ document.querySelectorAll('.modal-overlay').forEach(m => {
   m.addEventListener('click', e => { if (e.target === m) m.classList.remove('show'); });
 });
 
-loadONUs();
+// Init
+loadPONViewFilter();
+loadPONView();
 loadStats();
 </script>
 </body>
