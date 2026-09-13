@@ -366,13 +366,14 @@ async function loadPONView() {
       else if (pon.total > 0 && pct >= 0.05) badgeClass = 'badge-lightgreen';
 
       const ponId = 'pon-' + olt.olt_id + '-' + pon.pon_number;
+      const ponDisplay = q ? 'block' : '';
       html += `<div style="border-top:1px solid #334155;padding-top:10px;margin-top:10px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer;" onclick="togglePON('${ponId}')">
           <span style="font-size:12px;color:#64748b;">▶</span>
           <span class="badge ${badgeClass}">PON ${pon.pon_number}</span>
           <span style="font-size:14px;color:#94a3b8;">${displayTotal} ONUs · ${displayOnline} online · ${displayOffline} offline${q ? ' (filtered)' : ''}</span>
         </div>
-        <div id="${ponId}" class="pon-onus-wrap">
+        <div id="${ponId}" class="pon-onus-wrap" style="${ponDisplay ? 'display:' + ponDisplay + ';' : ''}">
           <div class="table-wrap" style="max-height:40vh;">
             <table>
               <thead>
