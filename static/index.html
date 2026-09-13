@@ -9,7 +9,7 @@
 body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
 .header { background: #1e293b; padding: 16px 24px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid #334155; }
 .header h1 { font-size: 18px; font-weight: 600; color: #38bdf8; }
-.header .stats { margin-left: auto; font-size: 13px; color: #94a3b8; }
+.header .stats { margin-left: auto; font-size: 14px; color: #94a3b8; }
 .header .stats span { color: #38bdf8; font-weight: 600; }
 .tabs { display: flex; gap: 0; background: #1e293b; border-bottom: 1px solid #334155; }
 .tab { padding: 10px 20px; cursor: pointer; font-size: 14px; color: #94a3b8; border-bottom: 2px solid transparent; transition: all 0.2s; }
@@ -22,17 +22,17 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; colo
 .search-box::before { content: "\1F50D"; position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 16px; }
 .panel { display: none; }
 .panel.active { display: block; }
-.btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.15s; }
+.btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.15s; }
 .btn-primary { background: #2563eb; color: white; }
 .btn-primary:hover { background: #1d4ed8; }
 .btn-danger { background: #dc2626; color: white; }
 .btn-danger:hover { background: #b91c1c; }
 .btn-ghost { background: transparent; color: #94a3b8; border: 1px solid #334155; }
 .btn-ghost:hover { background: #334155; color: #e2e8f0; }
-.btn-sm { padding: 4px 10px; font-size: 12px; }
+.btn-sm { padding: 4px 10px; font-size: 13px; }
 .toolbar { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; }
 table { width: auto; border-collapse: collapse; table-layout: auto; }
-th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #1e293b; font-size: 13px; white-space: nowrap; }
+th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid #1e293b; font-size: 14px; white-space: nowrap; }
 th { background: #1e293b; color: #94a3b8; font-weight: 500; position: sticky; top: 0; }
 tr:hover { background: #1e293b; }
 .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
@@ -43,6 +43,7 @@ tr:hover { background: #1e293b; }
 .badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
 .badge-blue { background: #1e40af; color: #93c5fd; }
 .badge-green { background: #166534; color: #86efac; }
+.badge-lightgreen { background: #365314; color: #bef264; }
 .badge-red { background: #991b1b; color: #fca5a5; }
 .badge-orange { background: #92400e; color: #fbbf24; }
 .badge-yellow { background: #854d0e; color: #fde047; }
@@ -57,8 +58,8 @@ tr:hover { background: #1e293b; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
 .empty { text-align: center; padding: 40px; color: #64748b; font-size: 14px; }
 .olt-card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 16px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
-.olt-info h3 { font-size: 14px; color: #e2e8f0; }
-.olt-info p { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+.olt-info h3 { font-size: 15px; color: #e2e8f0; }
+.olt-info p { font-size: 13px; color: #94a3b8; margin-top: 4px; }
 .olt-actions { display: flex; gap: 8px; }
 .history-item { padding: 10px 0; border-bottom: 1px solid #1e293b; font-size: 13px; }
 .history-item .time { color: #64748b; font-size: 11px; }
@@ -68,6 +69,7 @@ tr:hover { background: #1e293b; }
 .btn-sync:hover { background: #15803d; }
 .btn-sync:disabled { background: #64748b; cursor: not-allowed; }
 .sync-status { font-size: 12px; color: #94a3b8; margin-left: 8px; }
+.pon-onus-wrap { display: none; }
 .pon-onus-wrap .table-wrap { margin-top: 4px; }
 select { background: #0f172a !important; }
 </style>
@@ -357,17 +359,18 @@ async function loadPONView() {
       const displayOffline = displayTotal - displayOnline;
       const offlineCount = pon.offline;
       const pct = pon.total > 0 ? offlineCount / pon.total : 0;
+      // Color coding: red=100% down, orange=40-98%, light-green=5-39%, green=0-5%
       let badgeClass = 'badge-green';
-      let statusIcon = '🟢';
-      if (pon.total > 0 && pct >= 0.5) { badgeClass = 'badge-red'; statusIcon = '🔴'; }
-      else if (pon.total > 0 && pct >= 0.2) { badgeClass = 'badge-orange'; statusIcon = '🟡'; }
+      if (pon.total > 0 && pct === 1) badgeClass = 'badge-red';
+      else if (pon.total > 0 && pct >= 0.4) badgeClass = 'badge-orange';
+      else if (pon.total > 0 && pct >= 0.05) badgeClass = 'badge-lightgreen';
 
       const ponId = 'pon-' + olt.olt_id + '-' + pon.pon_number;
       html += `<div style="border-top:1px solid #334155;padding-top:10px;margin-top:10px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer;" onclick="togglePON('${ponId}')">
-          <span style="font-size:12px;color:#64748b;">▼</span>
+          <span style="font-size:12px;color:#64748b;">▶</span>
           <span class="badge ${badgeClass}">PON ${pon.pon_number}</span>
-          <span style="font-size:13px;color:#94a3b8;">${displayTotal} ONUs · ${displayOnline} online · ${displayOffline} offline ${q ? '(filtered)' : statusIcon}</span>
+          <span style="font-size:14px;color:#94a3b8;">${displayTotal} ONUs · ${displayOnline} online · ${displayOffline} offline${q ? ' (filtered)' : ''}</span>
         </div>
         <div id="${ponId}" class="pon-onus-wrap">
           <div class="table-wrap" style="max-height:40vh;">
@@ -404,7 +407,7 @@ async function loadPONView() {
 
 function togglePON(id) {
   const el = document.getElementById(id);
-  if (el.style.display === 'none') {
+  if (el.style.display === 'none' || el.style.display === '') {
     el.style.display = 'block';
   } else {
     el.style.display = 'none';
