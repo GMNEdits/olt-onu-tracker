@@ -6,22 +6,24 @@ A free, local, LAN-based web application for small retail ISPs to manage and tra
 
 ## Demo
 
-| ONUs Tab | OLTs & PONs | History |
-|---|---|---|
-| Searchable table with ONU ID, MAC, Customer, Status, OLT, PON | PON health badges (green/orange/red) | Track all changes with old → new values |
+| PON View | New ONUs | OLTs & PONs | History |
+|---|---|---|---|
+| OLT & PON-wise grouped ONUs with status, Rx power, search, per-OLT sync | Unconfigured ONUs needing customer names | OLT cards with PON health badges | Change tracking with old → new values |
 
 ## Features
 
 - **Auto-sync** from Syrotech GPON and EPON OLTs via HTTPS web UI scraping
+- **PON View tab** — ONUs grouped by OLT → PON, with health badges, search, and per-OLT sync button
+- **Per-OLT sync** — sync individual OLTs without syncing all, useful when working on specific fiber routes
 - **Searchable registry** — find any ONU by MAC/SN or customer name instantly
 - **Auto-detects** GPON vs EPON OLTs, no manual configuration needed
 - **ONU tracking** — ONU ID, MAC/SN, customer name, online/offline status, OLT, PON
 - **New ONUs tab** — shows unconfigured ONUs (no customer name yet)
 - **PON health indicator** — colored badges show fiber cut status:
-  - Green: less than 50% offline
-  - Orange: 50% or more offline (warning)
-  - Red: all ONUs offline (fiber cut)
-- **Live Rx Power check** — click Rx button on any ONU to fetch real-time optical receive power from the OLT
+  - Green: less than 20% offline
+  - Orange: 20-50% offline (warning)
+  - Red: 50% or more offline (likely fiber cut)
+- **Live Rx Power check** — click Rx button on any online ONU to fetch real-time optical receive power from the OLT
 - **Change tracking** — records added, removed, moved, renamed, and MAC-replaced ONUs
 - **History tab** — filterable log showing old → new values for every change
 - **Dark-themed web UI** — clean, responsive, works on any device with a browser
@@ -232,7 +234,7 @@ sudo launchctl load /Library/LaunchDaemons/com.olt-tracker.plist
 
 ### Step 3: Monitor
 
-- **ONUs tab** — search and view all ONUs
+- **PON View tab** — OLT & PON-wise grouped ONUs with health badges, search, and per-OLT sync
 - **New ONUs tab** — see which ONUs need customer names
 - **OLTs & PONs tab** — check PON health at a glance
 - **History tab** — review all changes over time
@@ -256,7 +258,7 @@ Both are auto-detected — no manual configuration needed.
 
 | Tab | Description |
 |---|---|
-| **ONUs** | All ONUs with ONU ID, MAC, Customer, Status, OLT, PON. Searchable. |
+| **PON View** | ONUs grouped by OLT → PON. Health badges, search, Rx power per ONU, per-OLT sync button. Default tab. |
 | **New ONUs** | ONUs with no customer name assigned (N/A or empty). |
 | **OLTs & PONs** | OLT cards with PON health badges (green/orange/red). |
 | **History** | All changes — moved, renamed, MAC changed, removed. Shows old → new. |
@@ -294,10 +296,11 @@ olt-onu-tracker/
 | POST | `/api/onus` | Add ONU |
 | PUT | `/api/onus/{id}` | Update ONU |
 | DELETE | `/api/onus/{id}` | Delete ONU |
+| GET | `/api/pon-view?olt_id=` | ONUs grouped by OLT → PON (for PON View tab) |
 | GET | `/api/events?onu_id=&limit=` | List history events |
 | GET | `/api/onus/{id}/optical` | Fetch live Rx Power for an ONU |
 | GET | `/api/stats` | Dashboard stats |
-| POST | `/api/sync` | Sync all OLTs |
+| POST | `/api/sync?olt_id=` | Sync all OLTs (or single OLT if `olt_id` provided) |
 
 ---
 

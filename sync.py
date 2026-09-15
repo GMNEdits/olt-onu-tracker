@@ -317,10 +317,13 @@ def ensure_pon(conn, olt_id, pon_number):
     return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
 
-def sync_all():
-    """Sync all OLTs. Returns summary dict."""
+def sync_all(olt_id: int = 0):
+    """Sync all OLTs (or a single OLT if olt_id given). Returns summary dict."""
     conn = get_conn()
-    olts = conn.execute("SELECT * FROM olts").fetchall()
+    if olt_id:
+        olts = conn.execute("SELECT * FROM olts WHERE id=?", (olt_id,)).fetchall()
+    else:
+        olts = conn.execute("SELECT * FROM olts").fetchall()
     conn.close()
 
     if not olts:
