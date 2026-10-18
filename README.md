@@ -385,7 +385,7 @@ olt-onu-tracker/
 | Column | Type | Description |
 |---|---|---|
 | id | INTEGER | Primary key |
-| name | TEXT | Operation name (e.g. Gorai PON 3 splice) |
+| name | TEXT | Operation name (e.g. MyISP PON 3 splice) |
 | start_time | TEXT | Start timestamp |
 | end_time | TEXT | End timestamp (null while active) |
 | status | TEXT | active / completed |
