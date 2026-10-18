@@ -6,13 +6,15 @@ A free, local, LAN-based web application for small retail ISPs to manage and tra
 
 ## Demo
 
-| PON View | New ONUs | OLTs & PONs | History |
-|---|---|---|---|
-| OLT & PON-wise grouped ONUs with status, Rx power, search, per-OLT sync | Unconfigured ONUs needing customer names | OLT cards with PON health badges | Change tracking with old → new values |
+| PON View | New ONUs | OLTs & PONs | History | Operations |
+|---|---|---|---|---|
+| OLT & PON-wise grouped ONUs with status, Rx power, search, per-OLT sync | Unconfigured ONUs needing customer names | OLT cards with PON health badges | Change tracking with old → new values | Field work sessions with change + Rx reports |
 
 ## Features
 
 - **Auto-sync** from Syrotech GPON and EPON OLTs via HTTPS web UI scraping
+- **Live mode** — toggle **Live** in the header: auto-syncs the selected OLT every 15s and streams changes into a permanent live-feed sidebar (customer name + status, newest first, filterable by OLT/PON, polled every 5s)
+- **Operations tab** — start/end field operations (e.g. fiber splice); each operation gets a report of every ONU change and Rx reading recorded while it was active
 - **PON View tab** — ONUs grouped by OLT → PON, with health badges, search, and per-OLT sync button
 - **Per-OLT sync** — sync individual OLTs without syncing all, useful when working on specific fiber routes
 - **Searchable registry** — find any ONU by MAC/SN or customer name instantly
@@ -23,8 +25,9 @@ A free, local, LAN-based web application for small retail ISPs to manage and tra
   - Green: less than 20% offline
   - Orange: 20-50% offline (warning)
   - Red: 50% or more offline (likely fiber cut)
-- **Live Rx Power check** — click Rx button on any online ONU to fetch real-time optical receive power from the OLT
-- **Change tracking** — records added, removed, moved, renamed, and MAC-replaced ONUs
+- **Live Rx Power check** — click Rx button on any online ONU to fetch real-time optical receive power from the OLT; click again for the last 15 readings (snapshots stored over time)
+- **Change tracking** — records added, removed, moved, renamed, MAC-replaced, and online/offline status changes
+- **Sync safety** — only one sync runs at a time (global lock, overlapping requests return `already_running`); full syncs resolve ONUs claimed by two OLTs without move ping-pong or fake status churn; single-OLT syncs never move ONUs between OLTs
 - **History tab** — filterable log showing old → new values for every change
 - **Dark-themed web UI** — clean, responsive, works on any device with a browser
 - **Zero cost** — runs on any office PC, no internet required, all open-source
@@ -160,7 +163,7 @@ server.bat status
 1. Create `start.bat`:
 ```bat
 @echo off
-cd C:\olt-tracker
+cd C:\path\to\olt-onu-tracker
 python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 2. Press `Win+R`, type `shell:startup`, press Enter
@@ -234,10 +237,12 @@ sudo launchctl load /Library/LaunchDaemons/com.olt-tracker.plist
 
 ### Step 3: Monitor
 
+- **Live mode** — press **Live** in the header to auto-sync and watch changes stream into the sidebar feed in real time
 - **PON View tab** — OLT & PON-wise grouped ONUs with health badges, search, and per-OLT sync
 - **New ONUs tab** — see which ONUs need customer names
 - **OLTs & PONs tab** — check PON health at a glance
 - **History tab** — review all changes over time
+- **Operations tab** — start an operation before field work, view its report afterwards
 
 ---
 
@@ -261,7 +266,10 @@ Both are auto-detected — no manual configuration needed.
 | **PON View** | ONUs grouped by OLT → PON. Health badges, search, Rx power per ONU, per-OLT sync button. Default tab. |
 | **New ONUs** | ONUs with no customer name assigned (N/A or empty). |
 | **OLTs & PONs** | OLT cards with PON health badges (green/orange/red). |
-| **History** | All changes — moved, renamed, MAC changed, removed. Shows old → new. |
+| **History** | All changes — moved, renamed, MAC changed, removed, status changes. Shows old → new. |
+| **Operations** | Start/end field operations; report of every change + Rx reading during the operation window. |
+
+**Live Feed** (sidebar, not a tab) — permanent right-hand column beside the content. Click **Live** in the header to activate: streams status changes, moves, adds, removals, and renames with customer name + status, newest first, filterable by OLT and PON.
 
 ---
 
@@ -275,6 +283,7 @@ olt-onu-tracker/
 ├── requirements.txt   # Python dependencies
 ├── server.sh          # Helper script — Linux/macOS
 ├── server.bat         # Helper script — Windows
+├── start.bat          # Minimal launcher (Windows)
 ├── static/
 │   └── index.html     # Web UI (single file, dark theme)
 └── olt_tracker.db     # SQLite database (auto-created, gitignored)
@@ -298,9 +307,15 @@ olt-onu-tracker/
 | DELETE | `/api/onus/{id}` | Delete ONU |
 | GET | `/api/pon-view?olt_id=` | ONUs grouped by OLT → PON (for PON View tab) |
 | GET | `/api/events?onu_id=&limit=` | List history events |
+| GET | `/api/changes?since_id=&since=&limit=` | Incremental change feed (used by live mode cursor) |
 | GET | `/api/onus/{id}/optical` | Fetch live Rx Power for an ONU |
+| GET | `/api/onus/{id}/rx-history?limit=` | Stored Rx power snapshots for an ONU |
 | GET | `/api/stats` | Dashboard stats |
 | POST | `/api/sync?olt_id=` | Sync all OLTs (or single OLT if `olt_id` provided) |
+| POST | `/api/operations` | Start an operation |
+| GET | `/api/operations` | List operations |
+| PUT | `/api/operations/{id}` | End an operation |
+| GET | `/api/operations/{id}/report` | Operation report — changes + Rx readings in its window |
 
 ---
 
@@ -341,7 +356,7 @@ olt-onu-tracker/
 |---|---|---|
 | id | INTEGER | Primary key |
 | onu_id | INTEGER | FK → onus.id |
-| event_type | TEXT | added / moved / removed / updated / replaced |
+| event_type | TEXT | added / moved / removed / updated / replaced / status_changed |
 | olt_id | INTEGER | FK → olts.id |
 | pon_id | INTEGER | FK → pons.id |
 | old_olt_name | TEXT | Previous OLT (for moves) |
@@ -353,7 +368,27 @@ olt-onu-tracker/
 | onu_name | TEXT | ONU name |
 | customer_name | TEXT | Current customer name |
 | old_customer_name | TEXT | Previous name (for renames/moves) |
+| old_status | TEXT | Previous status (for status changes) |
+| new_status | TEXT | New status (for status changes) |
 | timestamp | TEXT | Event timestamp |
+
+### rx_history
+| Column | Type | Description |
+|---|---|---|
+| id | INTEGER | Primary key |
+| onu_id | INTEGER | FK → onus.id |
+| rx_value | REAL | Rx power as number (dBm) |
+| rx_text | TEXT | Display value (e.g. `-21.5 dBm`) |
+| timestamp | TEXT | Snapshot time (each Rx click) |
+
+### operations
+| Column | Type | Description |
+|---|---|---|
+| id | INTEGER | Primary key |
+| name | TEXT | Operation name (e.g. Gorai PON 3 splice) |
+| start_time | TEXT | Start timestamp |
+| end_time | TEXT | End timestamp (null while active) |
+| status | TEXT | active / completed |
 
 ---
 
@@ -366,6 +401,7 @@ olt-onu-tracker/
 | **removed** | ONU disappeared from OLT | Location removed from |
 | **updated** | Customer name changed | Old name → new name |
 | **replaced** | MAC address changed (same customer) | Old MAC → new MAC |
+| **status_changed** | ONU went online or offline | Status old → new (live feed shows single status) |
 
 ---
 
@@ -376,6 +412,19 @@ olt-onu-tracker/
 - **No user login** — web UI is open to anyone on the LAN
 - **Credentials** — stored in SQLite database, keep server secure on your LAN
 - **Database** — each instance has its own `olt_tracker.db` (gitignored)
+
+## Changelog
+
+### v1.1.0
+
+- **Live mode** — Live toggle auto-syncs the selected OLT every 15s and streams changes into a permanent right-sidebar feed: customer name + status, newest first, OLT/PON filters, 5s polling
+- **Two-column layout** — live feed has a fixed column beside the content; tables scroll horizontally instead of stretching off-screen
+- **Operations tab** — start/end field operations; per-operation report of every ONU change and Rx reading recorded during the window
+- **Rx power history** — every Rx click stores a timestamped snapshot; click again for the last 15 readings
+- **Status change events** — `status_changed` with old/new status columns; live feed shows the single current status
+- **Sync correctness** — global sync lock (concurrent requests get `already_running`), cross-OLT conflict handling (no move ping-pong), non-owning OLTs never overwrite another OLT's status (no fake event churn), single-OLT syncs never move ONUs between OLTs
+- **New endpoints** — `/api/changes` (incremental feed cursor), `/api/operations/*`, `/api/onus/{id}/rx-history`
+- **UI polish** — live feed shows name + status only (no MAC), filter selections persist across Live toggles, silent feed polling
 
 ## License
 

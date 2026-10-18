@@ -4,7 +4,7 @@ import http.cookiejar
 import urllib.request
 import urllib.parse
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from database import get_conn
 
 _db_lock = threading.Lock()
@@ -166,7 +166,7 @@ def sync_olt(olt):
 # Sync Logic
 # ============================================================
 
-def diff_and_update(olt_id, new_onus):
+def diff_and_update(olt_id, new_onus, conflict_map=None):
     """Compare new_onus from OLT with database. Record changes."""
     conn = get_conn()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -193,6 +193,26 @@ def diff_and_update(olt_id, new_onus):
 
             if other:
                 other = dict(other)
+                # This row belongs to another OLT. Never write status into it:
+                # the owning OLT is the only authority for this row's status.
+                # A non-owner writing its view here (e.g. OLT 3 seeing an
+                # OLT-8-owned MAC as offline) ping-pongs offline->online
+                # status_changed events on every sync.
+                if conflict_map is None:
+                    # Single-OLT sync: we cannot know whether the owning OLT
+                    # also scrapes this MAC, so never move it either.
+                    # Topology moves are resolved by full syncs only.
+                    continue
+                claimants = conflict_map.get(mac, set())
+                if olt_id in claimants and other["olt_id"] in claimants:
+                    continue
+                cutoff = (datetime.now() - timedelta(seconds=60)).strftime("%Y-%m-%d %H:%M:%S")
+                recent_move = conn.execute(
+                    "SELECT 1 FROM events WHERE mac=? AND event_type='moved' AND timestamp > ? LIMIT 1",
+                    (mac, cutoff)
+                ).fetchone()
+                if recent_move:
+                    continue
                 conn.execute(
                     "UPDATE onus SET olt_id=?, pon_id=?, status=?, customer_name=?, onu_index=?, last_sync=? WHERE id=?",
                     (olt_id, new_pon, new_data.get("status", "online"),
@@ -240,6 +260,16 @@ def diff_and_update(olt_id, new_onus):
                      mac, new_data.get("onu_name", ""), new_data.get("customer_name", ""),
                      old.get("customer_name", ""), now)
                 )
+                new_status = new_data.get("status", "online")
+                old_status = old.get("status", "offline")
+                if new_status != old_status:
+                    conn.execute(
+                        "INSERT INTO events (onu_id, event_type, olt_id, pon_id, old_olt_name, old_pon_number, new_olt_name, new_pon_number, mac, onu_name, customer_name, old_status, new_status, timestamp) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (old["id"], "status_changed", olt_id, new_pon,
+                         olt_name, old_pon_num, olt_name, new_data.get("pon_number", 1),
+                         mac, new_data.get("onu_name", ""), new_data.get("customer_name", ""),
+                         old_status, new_status, now)
+                    )
                 moved.append(new_data)
             else:
                 new_cust = new_data.get("customer_name", "")
@@ -254,8 +284,19 @@ def diff_and_update(olt_id, new_onus):
                          mac, new_data.get("onu_name", ""), new_cust,
                          old.get("customer_name", ""), now)
                     )
+                new_status = new_data.get("status", "online")
+                old_status = old.get("status", "offline")
+                if new_status != old_status:
+                    conn.execute(
+                        "INSERT INTO events (onu_id, event_type, olt_id, pon_id, old_olt_name, old_pon_number, new_olt_name, new_pon_number, mac, onu_name, customer_name, old_status, new_status, timestamp) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (old["id"], "status_changed", olt_id, new_pon,
+                         olt_name, old.get("pon_number", new_data.get("pon_number", 1)),
+                         olt_name, new_data.get("pon_number", 1),
+                         mac, new_data.get("onu_name", ""), new_data.get("customer_name", ""),
+                         old_status, new_status, now)
+                    )
                 conn.execute("UPDATE onus SET status=?, onu_index=?, last_sync=? WHERE id=?",
-                             (new_data.get("status", "online"), int(new_data.get("onu_id", 0) or 0), now, old["id"]))
+                             (new_status, int(new_data.get("onu_id", 0) or 0), now, old["id"]))
 
     replaced = []
     for mac, old_data in old_by_mac.items():
@@ -331,6 +372,7 @@ def sync_all(olt_id: int = 0):
 
     results = {"olts_synced": 0, "total_added": 0, "total_removed": 0, "total_moved": 0, "total_replaced": 0, "errors": []}
 
+    scraped = {}
     for olt in olts:
         olt = dict(olt)
         try:
@@ -338,16 +380,28 @@ def sync_all(olt_id: int = 0):
             if not onus:
                 results["errors"].append(f"{olt['name']}: No ONUs found or connection failed")
                 continue
+            scraped[olt["id"]] = (olt, onus)
+        except Exception as e:
+            results["errors"].append(f"{olt['name']}: {str(e)}")
+            print(f"  [ERROR] {olt['name']}: {e}")
 
+    conflict_map = None
+    if len(scraped) > 1:
+        conflict_map = {}
+        for oid, (_, onus) in scraped.items():
+            for item in onus:
+                conflict_map.setdefault(item["mac"], set()).add(oid)
+
+    for oid, (olt, onus) in scraped.items():
+        try:
             with _db_lock:
-                diff = diff_and_update(olt["id"], onus)
+                diff = diff_and_update(oid, onus, conflict_map)
             results["olts_synced"] += 1
             results["total_added"] += len(diff["added"])
             results["total_removed"] += len(diff["removed"])
             results["total_moved"] += len(diff["moved"])
             results["total_replaced"] += len(diff.get("replaced", []))
             print(f"  [OK] {olt['name']}: +{len(diff['added'])} -{len(diff['removed'])} ~{len(diff['moved'])} !{len(diff.get('replaced', []))}")
-
         except Exception as e:
             results["errors"].append(f"{olt['name']}: {str(e)}")
             print(f"  [ERROR] {olt['name']}: {e}")

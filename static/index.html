@@ -15,7 +15,8 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; colo
 .tab { padding: 10px 20px; cursor: pointer; font-size: 14px; color: #94a3b8; border-bottom: 2px solid transparent; transition: all 0.2s; }
 .tab:hover { color: #e2e8f0; background: #334155; }
 .tab.active { color: #38bdf8; border-bottom-color: #38bdf8; }
-.main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+.main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; display: grid; grid-template-columns: minmax(0,1fr) 340px; gap: 16px; align-items: start; }
+.main-col { min-width: 0; }
 .search-box { position: relative; margin-bottom: 20px; }
 .search-box input { width: 100%; padding: 12px 16px 12px 44px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-size: 15px; outline: none; }
 .search-box input:focus { border-color: #38bdf8; }
@@ -39,7 +40,7 @@ tr:hover { background: #1e293b; }
 .status-online { background: #22c55e; }
 .status-offline { background: #ef4444; }
 .status-unknown { background: #f59e0b; }
-.table-wrap { max-height: 65vh; overflow-y: auto; border: 1px solid #1e293b; border-radius: 8px; }
+.table-wrap { max-height: 65vh; overflow: auto; border: 1px solid #1e293b; border-radius: 8px; }
 .badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
 .badge-blue { background: #1e40af; color: #93c5fd; }
 .badge-green { background: #166534; color: #86efac; }
@@ -72,6 +73,28 @@ tr:hover { background: #1e293b; }
 .pon-onus-wrap { display: none; }
 .pon-onus-wrap .table-wrap { margin-top: 4px; }
 select { background: #0f172a !important; }
+.btn-live { background: #334155; color: #94a3b8; border: 1px solid #475569; }
+.btn-live.active { background: #991b1b; color: #fca5a5; border-color: #ef4444; animation: livePulse 1.5s infinite; }
+@keyframes livePulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+.live-feed { position: sticky; top: 16px; background: #1e293b; border: 1px solid #334155; border-radius: 12px; z-index: 50; display: flex; flex-direction: column; max-height: 420px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+.live-feed.show { height: calc(100vh - 150px); max-height: none; border-color: #7f1d1d; box-shadow: 0 0 0 1px rgba(239,68,68,0.25), 0 8px 32px rgba(0,0,0,0.5); }
+.live-feed-header { padding: 12px 16px; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; }
+.live-feed-header span { font-size: 13px; font-weight: 600; color: #f87171; }
+.live-feed-close { display: none; background: none; border: none; color: #64748b; cursor: pointer; font-size: 16px; }
+.live-feed.show .live-feed-close { display: block; }
+.live-feed-close:hover { color: #e2e8f0; }
+.live-feed-body { flex: 1; overflow-y: auto; padding: 8px 0; }
+.live-feed-item { padding: 8px 16px; border-bottom: 1px solid #0f172a; font-size: 12px; }
+.live-feed-item:last-child { border-bottom: none; }
+.live-feed-item .time { color: #64748b; font-size: 11px; }
+.live-feed-item .detail { color: #cbd5e1; margin-top: 2px; }
+.live-feed-empty { padding: 20px; text-align: center; color: #64748b; font-size: 12px; }
+.live-feed-filters { display: flex; gap: 6px; padding: 8px 12px; border-bottom: 1px solid #334155; }
+@media (max-width: 1100px) {
+  .main { grid-template-columns: minmax(0,1fr); }
+  .live-feed { position: static; }
+  .live-feed.show { height: 400px; }
+}
 </style>
 </head>
 <body>
@@ -80,6 +103,7 @@ select { background: #0f172a !important; }
   <h1>OLT ONU Tracker</h1>
   <div style="margin-left:auto;display:flex;align-items:center;gap:12px;">
     <button class="btn btn-sync" id="syncBtn" onclick="runSync()">Sync OLTs</button>
+    <button class="btn btn-live" id="liveBtn" onclick="toggleLive()">&#128308; Live</button>
     <span class="sync-status" id="syncStatus"></span>
     <div class="stats">
       <span id="stat-olts">0</span> OLTs &nbsp;
@@ -96,9 +120,11 @@ select { background: #0f172a !important; }
   <div class="tab" onclick="switchTab('new')">New ONUs</div>
   <div class="tab" onclick="switchTab('olts')">OLTs & PONs</div>
   <div class="tab" onclick="switchTab('history')">History</div>
+  <div class="tab" onclick="switchTab('ops')">Operations</div>
 </div>
 
 <div class="main">
+  <div class="main-col">
   <!-- PON View Panel -->
   <div id="panel-ponview" class="panel active">
     <div class="search-box">
@@ -167,7 +193,37 @@ select { background: #0f172a !important; }
     </div>
   </div>
 
-</div>
+  <!-- Operations Panel -->
+  <div id="panel-ops" class="panel">
+    <div class="toolbar">
+      <input type="text" id="opNameInput" placeholder="Operation name (e.g. Gorai PON 3 splice)" style="padding:8px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#e2e8f0;font-size:13px;outline:none;width:300px;">
+      <button class="btn btn-primary" id="opStartBtn" onclick="startOperation()">Start Operation</button>
+      <span id="opActiveInfo" style="font-size:12px;color:#22c55e;display:none;"></span>
+    </div>
+    <div id="opList"></div>
+    <div id="opEmpty" class="empty">No operations recorded yet</div>
+  </div>
+  </div><!-- /main-col -->
+
+  <div class="live-feed" id="liveFeed">
+    <div class="live-feed-header">
+      <span>&#128308; Live Feed</span>
+      <button class="live-feed-close" onclick="toggleLive()">&#10005;</button>
+    </div>
+    <div class="live-feed-filters">
+      <select id="liveOltFilter" onchange="liveOltChanged()" style="flex:1;padding:5px 8px;background:#0f172a;border:1px solid #334155;border-radius:5px;color:#e2e8f0;font-size:12px;outline:none;">
+        <option value="0">All OLTs</option>
+      </select>
+      <select id="livePonFilter" onchange="livePonChanged()" style="flex:1;padding:5px 8px;background:#0f172a;border:1px solid #334155;border-radius:5px;color:#e2e8f0;font-size:12px;outline:none;">
+        <option value="0">All PONs</option>
+      </select>
+    </div>
+    <div class="live-feed-body" id="liveFeedBody">
+      <div class="live-feed-empty">Feed is off — click Live to start.</div>
+    </div>
+  </div>
+
+</div><!-- /main -->
 
 <!-- Add/Edit ONU Modal -->
 <div class="modal-overlay" id="onuModal">
@@ -256,6 +312,17 @@ select { background: #0f172a !important; }
   </div>
 </div>
 
+<!-- Operation Report Modal -->
+<div class="modal-overlay" id="opReportModal">
+  <div class="modal" style="max-width:700px;max-height:80vh;overflow-y:auto;">
+    <h2>Operation Report</h2>
+    <div id="opReportBody"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('opReportModal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <script>
 let searchTimer;
 
@@ -273,13 +340,18 @@ function switchTab(tab) {
   if (tab === 'olts') loadOLTs();
   if (tab === 'new') loadNewONUs();
   if (tab === 'history') loadHistory();
+  if (tab === 'ops') loadOperations();
 }
 
-async function api(url, method = 'GET', body = null) {
+async function api(url, method = 'GET', body = null, silent = false) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body) opts.body = JSON.stringify(body);
   const r = await fetch(url, opts);
-  if (!r.ok) { const e = await r.json().catch(() => ({})); alert(e.detail || 'Error'); return null; }
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    if (!silent) alert(e.detail || 'Error');
+    return null;
+  }
   return r.json();
 }
 
@@ -439,6 +511,7 @@ async function syncOLTFromView(oltId, btn) {
 
 // ========== Rx Power ==========
 async function fetchRx(onuId, btn) {
+  if (btn.dataset.rxShown === '1') { showRxHistory(onuId, btn); return; }
   btn.disabled = true;
   btn.textContent = '...';
   try {
@@ -450,6 +523,8 @@ async function fetchRx(onuId, btn) {
       else if (val < -25) color = '#f59e0b';
       btn.innerHTML = `<span style="color:${color};font-weight:600;">${esc(data.rx_power)}</span>`;
       btn.disabled = false;
+      btn.dataset.rxShown = '1';
+      btn.title = 'Click again for Rx history';
     } else {
       btn.textContent = 'N/A';
       btn.disabled = false;
@@ -457,6 +532,32 @@ async function fetchRx(onuId, btn) {
   } catch (e) {
     btn.textContent = 'Error';
     btn.disabled = false;
+  }
+}
+
+async function showRxHistory(onuId, btn) {
+  const old = document.getElementById('rxHistPopup');
+  if (old) old.remove();
+  const rect = btn.getBoundingClientRect();
+  const pop = document.createElement('div');
+  pop.id = 'rxHistPopup';
+  pop.style.cssText = `position:fixed;top:${rect.bottom + 6}px;left:${Math.max(8, rect.left - 120)}px;background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 12px;z-index:200;font-size:12px;min-width:220px;box-shadow:0 8px 24px rgba(0,0,0,.5);`;
+  pop.innerHTML = '<div style="color:#94a3b8;margin-bottom:6px;font-weight:600;">Rx Power History</div><div style="color:#64748b;">Loading...</div>';
+  document.body.appendChild(pop);
+  document.addEventListener('click', function close(e) {
+    if (!pop.contains(e.target) && e.target !== btn) { pop.remove(); document.removeEventListener('click', close); }
+  });
+  try {
+    const list = await api('/api/onus/' + onuId + '/rx-history?limit=15');
+    if (!list || list.length === 0) { pop.innerHTML = '<div style="color:#94a3b8;font-weight:600;margin-bottom:4px;">Rx Power History</div><div style="color:#64748b;">No history yet. Click Rx again to fetch.</div>'; return; }
+    pop.innerHTML = '<div style="color:#94a3b8;margin-bottom:6px;font-weight:600;">Rx Power History</div>' + list.map(h => {
+      let c = '#22c55e';
+      if (h.rx_value !== null && h.rx_value < -28) c = '#ef4444';
+      else if (h.rx_value !== null && h.rx_value < -25) c = '#f59e0b';
+      return `<div style="display:flex;justify-content:space-between;gap:12px;padding:2px 0;"><span style="color:#64748b;">${esc(h.timestamp)}</span><span style="color:${c};font-weight:600;">${esc(h.rx_text || 'N/A')}</span></div>`;
+    }).join('');
+  } catch (e) {
+    pop.innerHTML = '<div style="color:#ef4444;">Failed to load history</div>';
   }
 }
 
@@ -599,15 +700,22 @@ async function saveOLT() {
   loadStats();
 }
 
-async function runSync() {
+let syncRunning = false;
+
+async function runSync(oltId) {
+  if (syncRunning) return;
+  syncRunning = true;
   const btn = document.getElementById('syncBtn');
   const status = document.getElementById('syncStatus');
   btn.disabled = true;
   btn.textContent = 'Syncing...';
   status.textContent = 'Connecting to OLTs...';
   try {
-    const result = await api('/api/sync', 'POST');
-    if (result) {
+    const url = oltId ? '/api/sync?olt_id=' + oltId : '/api/sync';
+    const result = await api(url, 'POST');
+    if (result && result.already_running) {
+      status.textContent = 'Sync already running (another session)...';
+    } else if (result) {
       let msg = `Done: ${result.olts_synced} OLTs synced`;
       if (result.total_added) msg += ` | +${result.total_added} added`;
       if (result.total_removed) msg += ` | -${result.total_removed} removed`;
@@ -622,9 +730,11 @@ async function runSync() {
     }
   } catch (e) {
     status.textContent = 'Sync failed: ' + e.message;
+  } finally {
+    syncRunning = false;
+    btn.disabled = false;
+    btn.textContent = 'Sync OLTs';
   }
-  btn.disabled = false;
-  btn.textContent = 'Sync OLTs';
 }
 
 async function deleteOLT(id, name) {
@@ -704,12 +814,16 @@ async function loadHistory() {
     if (e.old_olt_name) from = esc(e.old_olt_name) + ' / P' + e.old_pon_number;
     if (e.new_olt_name) to = esc(e.new_olt_name) + ' / P' + e.new_pon_number;
 
-    const typeColors = { added: '#22c55e', moved: '#38bdf8', removed: '#ef4444', updated: '#f59e0b', replaced: '#a78bfa' };
-    const typeLabels = { added: 'Added', moved: 'Moved', removed: 'Removed', updated: 'Renamed', replaced: 'MAC Changed' };
+    const typeColors = { added: '#22c55e', moved: '#38bdf8', removed: '#ef4444', updated: '#f59e0b', replaced: '#a78bfa', status_changed: '#f97316' };
+    const typeLabels = { added: 'Added', moved: 'Moved', removed: 'Removed', updated: 'Renamed', replaced: 'MAC Changed', status_changed: 'Status' };
     const color = typeColors[e.event_type] || '#94a3b8';
     const label = typeLabels[e.event_type] || e.event_type;
 
-    if (e.event_type === 'updated' && e.old_customer_name) {
+    if (e.event_type === 'status_changed') {
+      const fromSt = e.old_status === 'online' ? '#22c55e' : '#ef4444';
+      const toSt = e.new_status === 'online' ? '#22c55e' : '#ef4444';
+      detail = `<span style="color:${color};font-weight:500;">${label}</span> <span style="color:${fromSt};">${esc(e.old_status || '?')}</span> → <span style="color:${toSt};">${esc(e.new_status || '?')}</span>`;
+    } else if (e.event_type === 'updated' && e.old_customer_name) {
       detail = `<span style="color:#64748b;">${esc(e.old_customer_name)}</span> → <span style="color:#22c55e;">${esc(e.customer_name)}</span>`;
     } else if (e.event_type === 'replaced' && e.old_mac) {
       detail = `<span style="color:${color};font-weight:500;">${label}</span> <code style="color:#64748b;">${esc(e.old_mac)}</code> → <code style="color:#a78bfa;">${esc(e.mac)}</code>`;
@@ -737,11 +851,260 @@ async function loadHistory() {
   }).join('');
 }
 
+// ========== Operations ==========
+async function loadOperations() {
+  const list = await api('/api/operations');
+  if (!list) return;
+  const el = document.getElementById('opList');
+  const empty = document.getElementById('opEmpty');
+  const startBtn = document.getElementById('opStartBtn');
+  const nameInput = document.getElementById('opNameInput');
+  const activeInfo = document.getElementById('opActiveInfo');
+
+  const active = list.find(o => o.status === 'active');
+  if (active) {
+    startBtn.style.display = 'none';
+    nameInput.style.display = 'none';
+    activeInfo.style.display = 'inline';
+    activeInfo.textContent = 'Active: ' + active.name + ' (since ' + active.start_time + ')';
+    activeInfo.dataset.opId = active.id;
+  } else {
+    startBtn.style.display = '';
+    nameInput.style.display = '';
+    activeInfo.style.display = 'none';
+    delete activeInfo.dataset.opId;
+  }
+
+  if (list.length === 0) { el.innerHTML = ''; empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+
+  el.innerHTML = list.map(o => {
+    const isActive = o.status === 'active';
+    const statusBadge = isActive
+      ? '<span class="badge badge-green">Active</span>'
+      : '<span class="badge badge-blue">Completed</span>';
+    const endCell = o.end_time ? esc(o.end_time) : '&mdash;';
+    const actions = isActive
+      ? `<button class="btn btn-danger btn-sm" onclick="endOperation(${o.id})">End</button>`
+      : `<button class="btn btn-ghost btn-sm" onclick="viewOpReport(${o.id})">View Report</button>`;
+    return `<div class="olt-card">
+      <div class="olt-info">
+        <h3>${esc(o.name)} ${statusBadge}</h3>
+        <p>Started: ${esc(o.start_time)} &nbsp;|&nbsp; Ended: ${endCell}</p>
+      </div>
+      <div class="olt-actions">${actions}</div>
+    </div>`;
+  }).join('');
+}
+
+async function startOperation() {
+  const name = document.getElementById('opNameInput').value.trim();
+  if (!name) { alert('Enter an operation name'); return; }
+  const r = await api('/api/operations', 'POST', { name });
+  if (r) { document.getElementById('opNameInput').value = ''; loadOperations(); }
+}
+
+async function endOperation(id) {
+  const r = await api('/api/operations/' + id, 'PUT');
+  if (r) loadOperations();
+}
+
+async function viewOpReport(id) {
+  const r = await api('/api/operations/' + id + '/report');
+  if (!r) return;
+  const op = r.operation;
+  let html = `<div style="margin-bottom:12px;"><strong>${esc(op.name)}</strong><br><span style="color:#94a3b8;font-size:12px;">${esc(op.start_time)} &rarr; ${esc(op.end_time || '?')} &nbsp;|&nbsp; ${r.total_events} events &nbsp;|&nbsp; ${r.onus_affected} ONUs affected</span></div>`;
+
+  if (r.by_mac.length === 0) {
+    html += '<div style="color:#64748b;padding:12px 0;">No changes recorded during this operation.</div>';
+  } else {
+    html += r.by_mac.map(g => {
+      let evHtml = g.events.map(e => {
+        let det = '';
+        if (e.event_type === 'status_changed') {
+          const f = e.old_status === 'online' ? '#22c55e' : '#ef4444';
+          const t = e.new_status === 'online' ? '#22c55e' : '#ef4444';
+          det = `Status <span style="color:${f};">${esc(e.old_status || '?')}</span> &rarr; <span style="color:${t};">${esc(e.new_status || '?')}</span>`;
+        } else if (e.event_type === 'moved') {
+          det = `Moved ${esc(e.old_olt_name || '')} P${e.old_pon_number} &rarr; ${esc(e.new_olt_name || '')} P${e.new_pon_number}`;
+        } else if (e.event_type === 'added') { det = 'Added'; }
+        else if (e.event_type === 'removed') { det = 'Removed'; }
+        else if (e.event_type === 'replaced') { det = `MAC ${esc(e.old_mac || '')} &rarr; ${esc(e.mac || '')}`; }
+        else if (e.event_type === 'updated') { det = `Renamed ${esc(e.old_customer_name || '')} &rarr; ${esc(e.customer_name || '')}`; }
+        else { det = esc(e.event_type); }
+        return `<div style="padding:2px 0;font-size:12px;"><span style="color:#64748b;">${esc(e.timestamp)}</span> &nbsp; ${det}</div>`;
+      }).join('');
+
+      let rxHtml = '';
+      const rxList = r.rx_history[g.mac];
+      if (rxList && rxList.length > 0) {
+        rxHtml = '<div style="margin-top:6px;padding-top:6px;border-top:1px solid #334155;"><span style="color:#94a3b8;font-size:11px;font-weight:600;">Rx Readings:</span>' +
+          rxList.map(h => {
+            let c = '#22c55e';
+            if (h.rx_value !== null && h.rx_value < -28) c = '#ef4444';
+            else if (h.rx_value !== null && h.rx_value < -25) c = '#f59e0b';
+            return `<div style="font-size:11px;padding:1px 0;"><span style="color:#64748b;">${esc(h.timestamp)}</span> &nbsp; <span style="color:${c};font-weight:600;">${esc(h.rx_text || 'N/A')}</span></div>`;
+          }).join('') + '</div>';
+      }
+
+      return `<div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:10px 12px;margin-bottom:8px;">
+        <div style="margin-bottom:4px;"><code style="color:#94a3b8;">${esc(g.mac)}</code> ${g.customer_name && g.customer_name !== 'N/A' ? '<span style="color:#e2e8f0;">' + esc(g.customer_name) + '</span>' : ''}</div>
+        ${evHtml}${rxHtml}
+      </div>`;
+    }).join('');
+  }
+
+  document.getElementById('opReportBody').innerHTML = html;
+  document.getElementById('opReportModal').classList.add('show');
+}
+
 function closeModal(id) { document.getElementById(id).classList.remove('show'); }
 
 document.querySelectorAll('.modal-overlay').forEach(m => {
   m.addEventListener('click', e => { if (e.target === m) m.classList.remove('show'); });
 });
+
+// ========== Live Mode ==========
+let liveMode = false;
+let liveSyncTimer = null;
+let liveFeedTimer = null;
+let liveLastId = 0;
+
+async function getLatestEventId() {
+  try {
+    const rows = await api('/api/changes?limit=1', 'GET', null, true);
+    if (rows && rows.length > 0) return rows[0].id;
+  } catch (e) {}
+  return 0;
+}
+
+function liveSyncTarget() {
+  const sel = document.getElementById('liveOltFilter').value;
+  return sel !== '0' ? parseInt(sel, 10) : 0;
+}
+
+async function toggleLive() {
+  const btn = document.getElementById('liveBtn');
+  const feed = document.getElementById('liveFeed');
+  if (liveMode) {
+    liveMode = false;
+    if (liveSyncTimer) { clearInterval(liveSyncTimer); liveSyncTimer = null; }
+    if (liveFeedTimer) { clearInterval(liveFeedTimer); liveFeedTimer = null; }
+    btn.classList.remove('active');
+    btn.innerHTML = '&#128308; Live';
+    feed.classList.remove('show');
+  } else {
+    liveMode = true;
+    liveLastId = await getLatestEventId();
+    btn.classList.add('active');
+    btn.innerHTML = '&#128308; Live ON';
+    feed.classList.add('show');
+    document.getElementById('liveFeedBody').innerHTML = '<div class="live-feed-empty">Waiting for changes...</div>';
+    await loadLiveFilters();
+    liveSyncTimer = setInterval(() => { runSync(liveSyncTarget()); }, 15000);
+    liveFeedTimer = setInterval(pollLiveFeed, 5000);
+    pollLiveFeed();
+    runSync(liveSyncTarget());
+  }
+}
+
+async function loadLiveFilters() {
+  const oltSel = document.getElementById('liveOltFilter');
+  const ponSel = document.getElementById('livePonFilter');
+  const prevOlt = oltSel.value || '0';
+  const prevPon = ponSel.value || '0';
+  oltSel.innerHTML = '<option value="0">All OLTs</option>';
+  ponSel.innerHTML = '<option value="0">All PONs</option>';
+  const olts = await api('/api/olts');
+  if (olts) {
+    olts.forEach(o => {
+      oltSel.innerHTML += `<option value="${o.id}">${esc(o.name)}</option>`;
+    });
+  }
+  if (prevOlt !== '0' && oltSel.querySelector('option[value="' + prevOlt + '"]')) {
+    oltSel.value = prevOlt;
+    const pons = await api('/api/olts/' + prevOlt + '/pons');
+    if (pons) {
+      pons.forEach(p => {
+        ponSel.innerHTML += `<option value="${p.id}">PON ${p.pon_number}</option>`;
+      });
+      if (prevPon !== '0' && ponSel.querySelector('option[value="' + prevPon + '"]')) {
+        ponSel.value = prevPon;
+      }
+    }
+  }
+}
+
+async function liveOltChanged() {
+  const oltId = document.getElementById('liveOltFilter').value;
+  const ponSel = document.getElementById('livePonFilter');
+  ponSel.innerHTML = '<option value="0">All PONs</option>';
+  if (oltId !== '0') {
+    const pons = await api('/api/olts/' + oltId + '/pons');
+    if (pons) {
+      pons.forEach(p => {
+        ponSel.innerHTML += `<option value="${p.id}">PON ${p.pon_number}</option>`;
+      });
+    }
+  }
+  await resetLiveFeed();
+}
+
+async function livePonChanged() {
+  await resetLiveFeed();
+}
+
+function resetLiveFeed() {
+  if (!liveMode) return;
+  document.getElementById('liveFeedBody').innerHTML = '<div class="live-feed-empty">Filter set — waiting for new changes...</div>';
+  pollLiveFeed();
+}
+
+function liveEventMatches(e) {
+  const oltId = document.getElementById('liveOltFilter').value;
+  const ponId = document.getElementById('livePonFilter').value;
+  if (oltId !== '0' && String(e.olt_id) !== oltId) return false;
+  if (ponId !== '0' && String(e.pon_id) !== ponId) return false;
+  return true;
+}
+
+async function pollLiveFeed() {
+  if (!liveMode) return;
+  try {
+    const changes = await api('/api/changes?since_id=' + liveLastId + '&limit=200', 'GET', null, true);
+    if (changes && changes.length > 0) {
+      liveLastId = changes[changes.length - 1].id;
+      const filtered = changes.filter(liveEventMatches);
+      if (filtered.length === 0) return;
+      const body = document.getElementById('liveFeedBody');
+      const empty = body.querySelector('.live-feed-empty');
+      if (empty) empty.remove();
+      const html = filtered.reverse().map(e => {
+        let detail = '';
+        if (e.event_type === 'status_changed') {
+          const toSt = e.new_status === 'online' ? '#22c55e' : (e.new_status === 'offline' ? '#ef4444' : '#f59e0b');
+          detail = `<span style="color:#f97316;">Status</span> <span style="color:${toSt};">${esc(e.new_status || '?')}</span>`;
+        } else if (e.event_type === 'moved') {
+          detail = `<span style="color:#38bdf8;">Moved</span> ${esc(e.old_olt_name || '')} P${e.old_pon_number} &rarr; ${esc(e.new_olt_name || '')} P${e.new_pon_number}`;
+        } else if (e.event_type === 'added') {
+          detail = `<span style="color:#22c55e;">Added</span>`;
+        } else if (e.event_type === 'removed') {
+          detail = `<span style="color:#ef4444;">Removed</span>`;
+        } else if (e.event_type === 'replaced') {
+          detail = `<span style="color:#a78bfa;">MAC Changed</span> ${esc(e.old_mac || '')} &rarr; ${esc(e.mac || '')}`;
+        } else if (e.event_type === 'updated') {
+          detail = `<span style="color:#f59e0b;">Renamed</span> ${esc(e.old_customer_name || '')} &rarr; ${esc(e.customer_name || '')}`;
+        } else {
+          detail = esc(e.event_type);
+        }
+        const namePart = e.customer_name && e.customer_name !== 'N/A' ? esc(e.customer_name) + ' &mdash; ' : '';
+        return `<div class="live-feed-item"><div class="time">${esc(e.timestamp)}</div><div class="detail">${namePart}${detail}</div></div>`;
+      }).join('');
+      body.insertAdjacentHTML('afterbegin', html);
+      while (body.children.length > 100) body.removeChild(body.lastChild);
+    }
+  } catch (e) { /* ignore poll errors */ }
+}
 
 // Init
 loadPONViewFilter();

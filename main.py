@@ -1,6 +1,7 @@
 import json
 import re
 import ssl
+import threading
 import http.cookiejar
 import urllib.request
 import urllib.parse
@@ -15,6 +16,11 @@ from sync import sync_all
 
 app = FastAPI()
 init_db()
+
+# Only one sync may run at a time (across ALL clients/tabs).
+# Concurrent syncs log into the same OLT web UIs, killing each other's
+# sessions and letting stale scrape data overwrite fresh status changes.
+_sync_mutex = threading.Lock()
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -242,6 +248,110 @@ def list_events(onu_id: int = 0, limit: int = 100):
     conn.close()
     return [dict(r) for r in rows]
 
+@app.get("/api/changes")
+def list_changes(since: str = "", since_id: int = 0, limit: int = 100):
+    conn = get_conn()
+    if since_id > 0:
+        rows = conn.execute(
+            "SELECT * FROM events WHERE id > ? ORDER BY id ASC LIMIT ?",
+            (since_id, limit)
+        ).fetchall()
+    elif since:
+        rows = conn.execute(
+            "SELECT * FROM events WHERE timestamp > ? ORDER BY id ASC LIMIT ?",
+            (since, limit)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM events ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+# --- Operations ---
+@app.post("/api/operations")
+def start_operation(body: dict):
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "Operation name required")
+    conn = get_conn()
+    active = conn.execute("SELECT id FROM operations WHERE status='active'").fetchone()
+    if active:
+        conn.close()
+        raise HTTPException(400, "An operation is already active. End it first.")
+    now = now_str()
+    conn.execute("INSERT INTO operations (name, start_time, status) VALUES (?, ?, 'active')", (name, now))
+    conn.commit()
+    op_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.close()
+    return {"id": op_id, "name": name, "start_time": now, "status": "active"}
+
+@app.put("/api/operations/{op_id}")
+def end_operation(op_id: int):
+    conn = get_conn()
+    op = conn.execute("SELECT * FROM operations WHERE id=?", (op_id,)).fetchone()
+    if not op:
+        conn.close()
+        raise HTTPException(404, "Operation not found")
+    if op["status"] != "active":
+        conn.close()
+        raise HTTPException(400, "Operation already ended")
+    now = now_str()
+    conn.execute("UPDATE operations SET end_time=?, status='completed' WHERE id=?", (now, op_id))
+    conn.commit()
+    conn.close()
+    return {"id": op_id, "status": "completed", "end_time": now}
+
+@app.get("/api/operations")
+def list_operations():
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM operations ORDER BY start_time DESC LIMIT 50").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+@app.get("/api/operations/{op_id}/report")
+def operation_report(op_id: int):
+    conn = get_conn()
+    op = conn.execute("SELECT * FROM operations WHERE id=?", (op_id,)).fetchone()
+    if not op:
+        conn.close()
+        raise HTTPException(404, "Operation not found")
+    start = op["start_time"]
+    end = op["end_time"] or now_str()
+    events = conn.execute(
+        "SELECT * FROM events WHERE timestamp >= ? AND timestamp <= ? ORDER BY timestamp ASC",
+        (start, end)
+    ).fetchall()
+    events = [dict(e) for e in events]
+    by_mac = {}
+    for e in events:
+        mac = e.get("mac") or ""
+        if mac not in by_mac:
+            by_mac[mac] = {"mac": mac, "customer_name": e.get("customer_name", ""), "events": []}
+        by_mac[mac]["events"].append(e)
+    rx_rows = conn.execute("""
+        SELECT rh.onu_id, rh.rx_value, rh.rx_text, rh.timestamp, o.mac, o.customer_name
+        FROM rx_history rh
+        JOIN onus o ON rh.onu_id = o.id
+        WHERE rh.timestamp >= ? AND rh.timestamp <= ?
+        ORDER BY rh.timestamp ASC
+    """, (start, end)).fetchall()
+    rx_by_mac = {}
+    for r in rx_rows:
+        d = dict(r)
+        mac = d.get("mac") or ""
+        if mac not in rx_by_mac:
+            rx_by_mac[mac] = []
+        rx_by_mac[mac].append({"rx_value": d["rx_value"], "rx_text": d["rx_text"], "timestamp": d["timestamp"]})
+    conn.close()
+    return {
+        "operation": dict(op),
+        "total_events": len(events),
+        "onus_affected": len(by_mac),
+        "by_mac": list(by_mac.values()),
+        "rx_history": rx_by_mac,
+    }
+
 @app.get("/api/stats")
 def stats():
     conn = get_conn()
@@ -332,10 +442,31 @@ def get_optical(onu_id: int):
                 m = re.search(r'[Rr]eceive\s*[Pp]ower.*?(-?\d+\.?\d*)\s*dBm', html)
             if m:
                 rx = m.group(1) + " dBm"
+                try:
+                    rx_val = float(m.group(1))
+                    conn2 = get_conn()
+                    conn2.execute(
+                        "INSERT INTO rx_history (onu_id, rx_value, rx_text, timestamp) VALUES (?, ?, ?, ?)",
+                        (onu_id, rx_val, rx, now_str())
+                    )
+                    conn2.commit()
+                    conn2.close()
+                except Exception:
+                    pass
                 break
         except Exception:
             pass
     return {"rx_power": rx or "N/A"}
+
+@app.get("/api/onus/{onu_id}/rx-history")
+def get_rx_history(onu_id: int, limit: int = 20):
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT rx_value, rx_text, timestamp FROM rx_history WHERE onu_id=? ORDER BY timestamp DESC LIMIT ?",
+        (onu_id, limit)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 # --- PON View (grouped ONUs by OLT → PON) ---
 @app.get("/api/pon-view")
@@ -386,9 +517,15 @@ def run_sync(olt_id: int = 0):
         conn.close()
         if not olt:
             raise HTTPException(404, "OLT not found")
+    if not _sync_mutex.acquire(blocking=False):
+        return {"ok": False, "already_running": True, "olts_synced": 0,
+                "total_added": 0, "total_removed": 0, "total_moved": 0,
+                "total_replaced": 0, "errors": []}
+    try:
         result = sync_all(olt_id=olt_id)
-    else:
-        result = sync_all()
+    finally:
+        _sync_mutex.release()
+    result["already_running"] = False
     return result
 
 if __name__ == "__main__":

@@ -69,6 +69,23 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_onu_name ON onus(onu_name);
         CREATE INDEX IF NOT EXISTS idx_onu_customer ON onus(customer_name);
         CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
+
+        CREATE TABLE IF NOT EXISTS rx_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            onu_id INTEGER NOT NULL,
+            rx_value REAL,
+            rx_text TEXT,
+            timestamp TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_rx_onu ON rx_history(onu_id);
+
+        CREATE TABLE IF NOT EXISTS operations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            start_time TEXT NOT NULL,
+            end_time TEXT,
+            status TEXT NOT NULL DEFAULT 'active'
+        );
     """)
     try:
         conn.execute("ALTER TABLE events ADD COLUMN old_customer_name TEXT DEFAULT ''")
@@ -80,6 +97,14 @@ def init_db():
         pass
     try:
         conn.execute("ALTER TABLE onus ADD COLUMN onu_index INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    try:
+        conn.execute("ALTER TABLE events ADD COLUMN old_status TEXT DEFAULT ''")
+    except Exception:
+        pass
+    try:
+        conn.execute("ALTER TABLE events ADD COLUMN new_status TEXT DEFAULT ''")
     except Exception:
         pass
     conn.commit()
