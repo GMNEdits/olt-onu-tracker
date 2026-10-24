@@ -102,10 +102,23 @@ def add_olt(data: OLTCreate):
 @app.delete("/api/olts/{olt_id}")
 def delete_olt(olt_id: int):
     conn = get_conn()
-    conn.execute("DELETE FROM olts WHERE id=?", (olt_id,))
-    conn.commit()
-    conn.close()
-    return {"ok": True}
+    try:
+        pon_ids = [r["id"] for r in conn.execute("SELECT id FROM pons WHERE olt_id=?", (olt_id,)).fetchall()]
+        if pon_ids:
+            placeholders = ",".join("?" * len(pon_ids))
+            conn.execute(f"DELETE FROM events WHERE olt_id=? OR pon_id IN ({placeholders})", [olt_id] + pon_ids)
+        else:
+            conn.execute("DELETE FROM events WHERE olt_id=?", (olt_id,))
+        conn.execute("DELETE FROM onus WHERE olt_id=?", (olt_id,))
+        conn.execute("DELETE FROM pons WHERE olt_id=?", (olt_id,))
+        conn.execute("DELETE FROM olts WHERE id=?", (olt_id,))
+        conn.commit()
+        return {"ok": True}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(400, str(e))
+    finally:
+        conn.close()
 
 # --- PONs ---
 @app.get("/api/olts/{olt_id}/pons")
